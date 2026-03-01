@@ -2,9 +2,15 @@
 
 import ast
 import os
+import re
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Union
+from typing import List, Dict, Tuple, Optional, Union, Any
 from dataclasses import dataclass
+import colorama
+from colorama import Fore, Style
+
+# Инициализируем colorama для работы с цветами в терминале
+colorama.init(autoreset=True)
 
 from .config import Config
 
@@ -54,6 +60,9 @@ class TypeEnforcer:
         for custom_type, standard_type in self.config.custom_types.items():
             if standard_type not in self.standard_to_custom:
                 self.standard_to_custom[standard_type] = custom_type
+
+        # Компилируем регулярное выражение для поиска type comments
+        self.type_comment_pattern = re.compile(r'#\s*type:\s*([^#\n]+)')
 
     def scan_file(self, file_path: Union[str, Path]) -> List[TypeViolation]:
         """Сканировать один файл на нарушения."""
@@ -113,10 +122,19 @@ class TypeEnforcer:
                             )
 
                 elif isinstance(node, ast.Assign):
-                    # Проверяем аннотации типов в присваиваниях (если есть)
+                    # Проверяем аннотации типов в присваиваниях (type comments)
                     if hasattr(node, "type_comment") and node.type_comment:
-                        # TODO: обработать type comments
-                        pass
+                        self._check_type_comment(node, file_path, lines, violations)
+
+                    # Также проверяем type comments на отдельных строках
+                    if hasattr(node, "lineno") and node.lineno > 0:
+                        self._check_line_for_type_comment(
+                            lines[node.lineno - 1] if node.lineno <= len(lines) else "",
+                            node.lineno,
+                            file_path,
+                            lines,
+                            violations
+                        )
 
         except SyntaxError as e:
             print(f"Синтаксическая ошибка в файле {file_path}: {e}")
@@ -126,12 +144,123 @@ class TypeEnforcer:
         self.violations = violations
         return violations
 
+    def _check_type_comment(
+            self,
+            node: ast.AST,
+            file_path: Path,
+            lines: List[str],
+            violations: List[TypeViolation],
+    ):
+        """Проверить type comment на наличие стандартных типов."""
+        if not hasattr(node, "type_comment") or not node.type_comment:
+            return
+
+        type_comment = node.type_comment
+        line_num = getattr(node, "lineno", 0)
+
+        # Парсим type comment
+        try:
+            # Пробуем распарсить type comment как аннотацию типа
+            parsed_type = ast.parse(type_comment, mode="eval").body
+
+            # Рекурсивно проверяем все имена в распарсенном типе
+            self._check_type_comment_node(parsed_type, file_path, line_num, lines, violations, type_comment)
+        except SyntaxError:
+            # Если не удалось распарсить, ищем стандартные типы через регулярные выражения
+            self._check_type_comment_regex(type_comment, file_path, line_num, lines, violations)
+
+    def _check_type_comment_node(
+            self,
+            node: ast.AST,
+            file_path: Path,
+            line_num: int,
+            lines: List[str],
+            violations: List[TypeViolation],
+            original_comment: str
+    ):
+        """Рекурсивно проверить узлы распарсенного type comment."""
+        if isinstance(node, ast.Name):
+            if node.id in self.standard_to_custom:
+                # Создаем нарушение для type comment
+                line_content = lines[line_num - 1].strip() if line_num <= len(lines) else ""
+
+                # Находим колонку, где начинается стандартный тип в комментарии
+                comment_part = line_content.split('#', 1)[1] if '#' in line_content else ""
+                col_offset = line_content.find(comment_part) + comment_part.find(
+                    node.id) if node.id in comment_part else 0
+
+                violation = TypeViolation(
+                    file_path=str(file_path),
+                    line=line_num,
+                    column=col_offset,
+                    custom_type=self.standard_to_custom[node.id],
+                    standard_type=node.id,
+                    line_content=line_content,
+                    context=self._get_context(lines, line_num),
+                )
+
+                if not self._violation_exists(violations, violation):
+                    violations.append(violation)
+
+        # Рекурсивно проверяем дочерние узлы
+        for child in ast.iter_child_nodes(node):
+            self._check_type_comment_node(child, file_path, line_num, lines, violations, original_comment)
+
+    def _check_type_comment_regex(
+            self,
+            type_comment: str,
+            file_path: Path,
+            line_num: int,
+            lines: List[str],
+            violations: List[TypeViolation]
+    ):
+        """Проверить type comment с помощью регулярных выражений."""
+        line_content = lines[line_num - 1].strip() if line_num <= len(lines) else ""
+
+        # Ищем все стандартные типы в комментарии
+        for std_type, custom_type in self.standard_to_custom.items():
+            # Используем границы слов для точного совпадения
+            pattern = r'\b' + re.escape(std_type) + r'\b'
+            for match in re.finditer(pattern, type_comment):
+                # Находим колонку в оригинальной строке
+                comment_part = line_content.split('#', 1)[1] if '#' in line_content else ""
+                col_in_comment = match.start()
+                col_offset = line_content.find(comment_part) + col_in_comment
+
+                violation = TypeViolation(
+                    file_path=str(file_path),
+                    line=line_num,
+                    column=col_offset,
+                    custom_type=custom_type,
+                    standard_type=std_type,
+                    line_content=line_content,
+                    context=self._get_context(lines, line_num),
+                )
+
+                if not self._violation_exists(violations, violation):
+                    violations.append(violation)
+
+    def _check_line_for_type_comment(
+            self,
+            line: str,
+            line_num: int,
+            file_path: Path,
+            lines: List[str],
+            violations: List[TypeViolation]
+    ):
+        """Проверить строку на наличие type comment."""
+        # Ищем комментарии вида # type: ...
+        match = self.type_comment_pattern.search(line)
+        if match:
+            type_comment = match.group(1).strip()
+            self._check_type_comment_regex(type_comment, file_path, line_num, lines, violations)
+
     def _check_name_node(
-        self,
-        node: ast.Name,
-        file_path: Path,
-        lines: List[str],
-        violations: List[TypeViolation],
+            self,
+            node: ast.Name,
+            file_path: Path,
+            lines: List[str],
+            violations: List[TypeViolation],
     ):
         """Проверить узел с именем."""
         # Проверяем, является ли имя стандартным типом, который нужно заменить
@@ -155,16 +284,16 @@ class TypeEnforcer:
                     violations.append(violation)
 
     def _violation_exists(
-        self, violations: List[TypeViolation], new_violation: TypeViolation
+            self, violations: List[TypeViolation], new_violation: TypeViolation
     ) -> bool:
         """Проверить, существует ли такое же нарушение."""
         for v in violations:
             if (
-                v.file_path == new_violation.file_path
-                and v.line == new_violation.line
-                and v.column == new_violation.column
-                and v.standard_type == new_violation.standard_type
-                and v.custom_type == new_violation.custom_type
+                    v.file_path == new_violation.file_path
+                    and v.line == new_violation.line
+                    and v.column == new_violation.column
+                    and v.standard_type == new_violation.standard_type
+                    and v.custom_type == new_violation.custom_type
             ):
                 return True
         return False
@@ -191,7 +320,6 @@ class TypeEnforcer:
             return True
 
         # 4. В составе сложного типа: List[int], Union[int, float]
-        # Проверяем, что это не часть индекса сложного типа
         if isinstance(parent, ast.Subscript):
             # Если node это slice (например, int в List[int]), то это индекс
             # Если node это value (например, List в List[int]), то это основной тип
@@ -199,9 +327,9 @@ class TypeEnforcer:
                 # Это индекс, а не основной тип
                 return False
             elif (
-                isinstance(parent.slice, ast.Index)
-                and hasattr(parent.slice, "value")
-                and parent.slice.value == node
+                    isinstance(parent.slice, ast.Index)
+                    and hasattr(parent.slice, "value")
+                    and parent.slice.value == node
             ):
                 # Это индекс, а не основной тип
                 return False
@@ -222,13 +350,12 @@ class TypeEnforcer:
             grandparent = getattr(parent, "parent", None)
             if isinstance(grandparent, ast.Subscript) and hasattr(grandparent, "value"):
                 if isinstance(grandparent.value, ast.Name) and grandparent.value.id in (
-                    "Union",
-                    "Optional",
+                        "Union",
+                        "Optional",
                 ):
                     return True  # Это кортеж типов Union/Optional
 
         # 7. В type alias: MyType = int
-        # Проверяем, что это не присвоение значения, а объявление типа
         if isinstance(parent, ast.Assign):
             # Если это Assign и узел - в списке целей, то это присвоение, а не аннотация
             if node in parent.targets:
@@ -238,11 +365,11 @@ class TypeEnforcer:
         return True
 
     def _check_annotation(
-        self,
-        node: ast.AST,
-        file_path: Path,
-        lines: List[str],
-        violations: List[TypeViolation],
+            self,
+            node: ast.AST,
+            file_path: Path,
+            lines: List[str],
+            violations: List[TypeViolation],
     ):
         """Проверить аннотацию типа."""
         if isinstance(node, ast.Name):
@@ -267,24 +394,28 @@ class TypeEnforcer:
                     for elt in node.slice.value.elts:
                         if isinstance(elt, ast.Name):
                             self._check_name_node(elt, file_path, lines, violations)
+                elif isinstance(node.slice.value, ast.Subscript):
+                    self._check_annotation(node.slice.value, file_path, lines, violations)
         elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             # Для Union типов (Python 3.10+) int | float
             self._check_annotation(node.left, file_path, lines, violations)
             self._check_annotation(node.right, file_path, lines, violations)
         elif (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "Union"
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "Union"
         ):
             # Для Union[int, float] (старый синтаксис)
             if isinstance(node.slice, ast.Tuple):
                 for elt in node.slice.elts:
                     if isinstance(elt, ast.Name):
                         self._check_name_node(elt, file_path, lines, violations)
+                    elif isinstance(elt, ast.Subscript):
+                        self._check_annotation(elt, file_path, lines, violations)
         elif (
-            isinstance(node, ast.Subscript)
-            and isinstance(node.value, ast.Name)
-            and node.value.id == "Optional"
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "Optional"
         ):
             # Для Optional[int] (старый синтаксис)
             if isinstance(node.slice, ast.Name):
@@ -294,6 +425,8 @@ class TypeEnforcer:
                     self._check_name_node(
                         node.slice.value, file_path, lines, violations
                     )
+                elif isinstance(node.slice.value, ast.Subscript):
+                    self._check_annotation(node.slice.value, file_path, lines, violations)
 
     def _should_ignore(self, node: ast.Name) -> bool:
         """Проверить, нужно ли игнорировать этот узел."""
@@ -301,7 +434,7 @@ class TypeEnforcer:
         return False
 
     def _get_context(
-        self, lines: List[str], line_num: int, context_lines: int = 2
+            self, lines: List[str], line_num: int, context_lines: int = 2
     ) -> str:
         """Получить контекст вокруг строки."""
         start = max(0, line_num - context_lines - 1)
@@ -349,20 +482,59 @@ class TypeEnforcer:
         total = len(self.violations)
 
         print(
-            f" Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n"
+            f"{Fore.CYAN} Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:{Style.RESET_ALL}\n"
         )
 
         for file_path, violations in by_file.items():
-            print(f"\n {file_path}:")
+            print(f"\n{Fore.YELLOW} {file_path}:{Style.RESET_ALL}")
             for v in violations:
-                print(f"   Строка {v.line}, колонка {v.column}")
+                # Формат для кликабельных ссылок (работает в большинстве IDE)
+                abs_path = os.path.abspath(v.file_path)
+                clickable_link = f"file://{abs_path}:{v.line}:{v.column + 1}"
+
+                # Выводим ссылку отдельно, чтобы она не обрезалась
+                print(f"  {Fore.BLUE}→ {clickable_link}{Style.RESET_ALL}")
+
+                # Информация о строке и колонке
+                print(f"   {Fore.RED}Строка {v.line}, колонка {v.column + 1}{Style.RESET_ALL}")
+
+                # Сообщение об ошибке
                 print(
-                    f"     Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'"
+                    f"     {Fore.RED}Используйте кастомный тип {Fore.GREEN}'{v.custom_type}'{Fore.RED} вместо стандартного {Fore.YELLOW}'{v.standard_type}'{Style.RESET_ALL}"
                 )
-                print(f"     {v.line_content}")
+
+                # Подсвечиваем проблемный участок в строке кода с отступом
+                highlighted_line = self._highlight_error_in_line(v.line_content, v.standard_type, v.column)
+
+                # Добавляем отступы для лучшей читаемости
+                print(f"       {highlighted_line}")
+
+                # Добавляем пустую строку для разделения нарушений
+                print()
+
                 if verbose:
                     print(f"\n{v.context}")
                     print("-" * 50)
+
+    def _highlight_error_in_line(self, line_content: str, error_type: str, column: int) -> str:
+        """Подсветить ошибочный тип в строке кода."""
+        # Находим позицию стандартного типа в строке
+        pos = line_content.find(error_type, column)
+        if pos != -1:
+            # Разбиваем строку на части: до ошибки, ошибка, после ошибки
+            before = line_content[:pos]
+            error = line_content[pos:pos + len(error_type)]
+            after = line_content[pos + len(error_type):]
+            return f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
+        else:
+            # Если не нашли точное совпадение, просто подсвечиваем символ по колонке
+            if column < len(line_content):
+                before = line_content[:column]
+                error = line_content[column]
+                after = line_content[column + 1:]
+                return f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
+            else:
+                return line_content
 
     def get_fix_suggestions(self) -> Dict[str, List[Tuple[TypeViolation, str]]]:
         """Получить предложения по исправлению."""
