@@ -295,19 +295,19 @@ class TypeEnforcer:
     def print_report(self, verbose: bool = False):
         """Вывести отчет о нарушениях."""
         if not self.violations:
-            print("✅ Нарушений не найдено! Все типы соответствуют кастомным.")
+            print(" Нарушений не найдено! Все типы соответствуют кастомным.")
             return
 
         by_file = self.get_violations_by_file()
         total = len(self.violations)
 
         print(
-            f"❌ Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n")
+            f" Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n")
 
         for file_path, violations in by_file.items():
             print(f"\n📄 {file_path}:")
             for v in violations:
-                print(f"  📍 Строка {v.line}, колонка {v.column}")
+                print(f"   Строка {v.line}, колонка {v.column}")
                 print(f"     Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'")
                 print(f"     {v.line_content}")
                 if verbose:

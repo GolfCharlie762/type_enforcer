@@ -79,11 +79,11 @@ class TypeFixer:
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
 
-            print(f"✅ Исправлен файл: {file_path}")
+            print(f" Исправлен файл: {file_path}")
             return True
 
         except Exception as e:
-            print(f"❌ Ошибка при исправлении {file_path}: {e}")
+            print(f" Ошибка при исправлении {file_path}: {e}")
             return False
 
     def _add_missing_imports(self, lines: List[str],
