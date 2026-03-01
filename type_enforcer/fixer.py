@@ -2,7 +2,7 @@
 
 import shutil
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Set
+from typing import List, Dict, Tuple, Set
 from datetime import datetime
 
 from .core import TypeEnforcer, TypeViolation

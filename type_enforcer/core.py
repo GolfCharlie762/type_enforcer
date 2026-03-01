@@ -3,10 +3,10 @@
 import ast
 import os
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, Set, Union
-from dataclasses import dataclass, field
+from typing import List, Dict, Tuple, Optional, Union
+from dataclasses import dataclass
 
-from .config import Config, DEFAULT_IMPORTS
+from .config import Config
 
 
 class ParentNodeTransformer(ast.NodeTransformer):

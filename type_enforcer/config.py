@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 from dataclasses import dataclass, asdict
 
 # Типы по умолчанию из запроса
