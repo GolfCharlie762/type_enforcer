@@ -13,10 +13,10 @@ DEFAULT_TYPES = {
     "Uint": "uint",
     "LongDouble": "float",
     "Bool": "bool",
-    "NDArrayFloat": "NDArray",
-    "NDArrayInt": "NDArray",
-    "NDArrayUint": "NDArray",
-    "NDArrayBool": "NDArray",
+    "NDArray": "np.ndarray",
+    "NDArrayFloat": "NDArray[Float]",
+    "NDArrayInt": "NDArray[Int]",
+    "NDArrayBool": "NDArray[Bool]"
 }
 
 # Импорты, которые нужно добавлять
