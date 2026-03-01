@@ -53,14 +53,6 @@ class TypeFixer:
         try:
             path = Path(file_path)
 
-            # Создаем резервную копию
-            if self.enforcer.config.backup_files:
-                backup_path = path.with_suffix(
-                    f"{path.suffix}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                )
-                shutil.copy2(path, backup_path)
-                print(f"📦 Создана резервная копия: {backup_path}")
-
             # Читаем файл
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
