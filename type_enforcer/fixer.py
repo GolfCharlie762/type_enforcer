@@ -66,12 +66,48 @@ class TypeFixer:
                 lines = f.readlines()
 
             # Применяем исправления (в обратном порядке, чтобы не сбивать номера строк)
-            fixes.sort(key=lambda x: x[0].line, reverse=True)
-
+            # Группируем исправления по строкам
+            fixes_by_line = {}
             for violation, new_line in fixes:
                 line_idx = violation.line - 1
-                # Убираем лишние пробелы в конце, но сохраняем форматирование
-                lines[line_idx] = new_line.rstrip() + "\n"
+                if line_idx not in fixes_by_line:
+                    fixes_by_line[line_idx] = []
+                fixes_by_line[line_idx].append((violation, new_line))
+            
+            # Применяем исправления для каждой строки
+            for line_idx, line_fixes in fixes_by_line.items():
+                original_line = lines[line_idx]
+                
+                # Сортируем исправления в строке по позиции в обратном порядке
+                line_fixes.sort(key=lambda x: x[0].column, reverse=True)
+                
+                # Применяем каждое исправление в строке
+                modified_line = original_line
+                for violation, new_content in line_fixes:
+                    # Определяем стандартный и кастомный типы для замены
+                    old_type = violation.standard_type
+                    new_type = violation.custom_type
+                    
+                    # Заменяем только конкретное вхождение типа, учитывая позицию
+                    # Находим позицию в строке и делаем точечную замену
+                    parts_before = modified_line[:violation.column]
+                    parts_after = modified_line[violation.column:]
+                    
+                    # Заменяем первое вхождение старого типа в части после позиции
+                    parts_after = parts_after.replace(old_type, new_type, 1)
+                    
+                    modified_line = parts_before + parts_after
+                
+                # Сохраняем отступы исходной строки
+                leading_whitespace = ""
+                for char in original_line:
+                    if char in (' ', '\t'):
+                        leading_whitespace += char
+                    else:
+                        break
+                
+                # Применяем исправление с сохранением отступов
+                lines[line_idx] = leading_whitespace + modified_line.lstrip()
 
             # Добавляем необходимые импорты
             if self.enforcer.config.auto_add_imports:
