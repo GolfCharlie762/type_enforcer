@@ -33,7 +33,7 @@ class TypeViolation:
 
     def __str__(self) -> str:
         # Меняем сообщение, чтобы было понятно, что нужно использовать кастомный тип
-        return f"{self.file_path}:{self.line}:{self.column} - Используйте кастомный тип '{self.custom_type}' вместо стандартного '{self.standard_type}'"
+        return f"{self.file_path}:{self.line}:{self.column + 1} - TC001 Используйте кастомный тип '{self.custom_type}' вместо стандартного '{self.standard_type}'"
 
     @property
     def location(self) -> str:

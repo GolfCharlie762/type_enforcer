@@ -5,6 +5,8 @@
 
 from typing import List, Dict, Optional, Union, Any
 import numpy as np
+from numpy import float64 as Float
+from numpy import int32 as Int
 
 # ========== ПЕРЕМЕННЫЕ ==========
 
@@ -16,11 +18,11 @@ correct_uint: Uint = 100
 correct_long_double: LongDouble = 1.23456789012345
 
 # Неправильно (ДОЛЖНЫ быть нарушения)
-wrong_int: int = 42
-wrong_float: float = 3.14159
-wrong_bool: bool = True
-wrong_uint: int = 100  # должно быть Uint
-wrong_long_double: float = 1.23456789012345  # должно быть LongDouble
+wrong_int: Int = 42
+wrong_float: Float = 3.14159
+wrong_bool: Bool = True
+wrong_uint: Int = 100  # должно быть Uint
+wrong_long_double: Float = 1.23456789012345  # должно быть LongDouble
 
 
 # ========== ФУНКЦИИ ==========
@@ -40,12 +42,12 @@ def correct_function(
 
 # Неправильная функция (нарушения в аргументах и возврате)
 def wrong_function(
-        a: int,  # нарушение
-        b: float,  # нарушение
-        c: bool = True  # нарушение
-) -> float:  # нарушение
+        a: Int,  # нарушение
+        b: Float,  # нарушение
+        c: Bool = True  # нарушение
+) -> Float:  # нарушение
     """Функция с неправильными типами."""
-    result = float(a) * b
+    result = Float(a) * b
     if c:
         return result
     return 0.0
@@ -74,17 +76,17 @@ class CorrectClass:
 class WrongClass:
     """Класс с неправильными типами."""
 
-    def __init__(self, value: int, name: str):  # нарушение
+    def __init__(self, value: Int, name: str):  # нарушение
         self.value = value
         self.name = name
-        self.flag: bool = True  # нарушение
+        self.flag: Bool = True  # нарушение
 
-    def process(self, multiplier: float) -> float:  # нарушения
+    def process(self, multiplier: Float) -> Float:  # нарушения
         """Метод с неправильными типами."""
-        return float(self.value) * multiplier
+        return Float(self.value) * multiplier
 
     @property
-    def is_positive(self) -> bool:  # нарушение
+    def is_positive(self) -> Bool:  # нарушение
         """Свойство с неправильным типом."""
         return self.value > 0
 
@@ -100,9 +102,9 @@ correct_any: Any = "можно anything"
 
 # Неправильные сложные типы
 wrong_list: List[int] = [1, 2, 3, 4, 5]  # нарушение
-wrong_dict: Dict[str, float] = {"pi": 3.14, "e": 2.71}  # нарушение
+wrong_dict: Dict[str, Float] = {"pi": 3.14, "e": 2.71}  # нарушение
 wrong_optional: Optional[bool] = None  # нарушение
-wrong_union: Union[int, float, str] = 42  # нарушения (int и float)
+wrong_union: Union[Int, Float, str] = 42  # нарушения (int и float)
 
 # ========== ВЛОЖЕННЫЕ ТИПЫ ==========
 
@@ -123,7 +125,7 @@ wrong_nested_dict: Dict[str, List[float]] = {  # нарушение
     "first": [1.1, 1.2],
     "second": [2.1, 2.2]
 }
-wrong_complex: Dict[str, Union[int, List[float]]] = {  # нарушения
+wrong_complex: Dict[str, Union[Int, List[float]]] = {  # нарушения
     "simple": 42,
     "complex": [1.1, 1.2]
 }
