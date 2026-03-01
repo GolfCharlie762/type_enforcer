@@ -5,6 +5,11 @@ import os
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union
 from dataclasses import dataclass
+import colorama
+from colorama import Fore, Style
+
+# Инициализируем colorama для работы с цветами в терминале
+colorama.init(autoreset=True)
 
 from .config import Config
 
@@ -349,20 +354,44 @@ class TypeEnforcer:
         total = len(self.violations)
 
         print(
-            f" Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n"
+            f"{Fore.CYAN} Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:{Style.RESET_ALL}\n"
         )
 
         for file_path, violations in by_file.items():
-            print(f"\n {file_path}:")
+            print(f"\n{Fore.YELLOW} {file_path}:{Style.RESET_ALL}")
             for v in violations:
-                print(f"   Строка {v.line}, колонка {v.column}")
+                # Выводим кликабельную ссылку на ошибку в формате, поддерживаемом IDE
+                print(f"  {Fore.BLUE}→ {file_path}:{v.line}:{v.column + 1}{Style.RESET_ALL}")
+                print(f"   {Fore.RED}Строка {v.line}, колонка {v.column}{Style.RESET_ALL}")
                 print(
-                    f"     Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'"
+                    f"     {Fore.RED}Используйте кастомный тип {Fore.GREEN}'{v.custom_type}'{Fore.RED} вместо стандартного {Fore.YELLOW}'{v.standard_type}'{Style.RESET_ALL}"
                 )
-                print(f"     {v.line_content}")
+                # Подсвечиваем проблемный участок в строке кода
+                highlighted_line = self._highlight_error_in_line(v.line_content, v.standard_type, v.column)
+                print(f"     {highlighted_line}")
                 if verbose:
                     print(f"\n{v.context}")
                     print("-" * 50)
+
+    def _highlight_error_in_line(self, line_content: str, error_type: str, column: int) -> str:
+        """Подсветить ошибочный тип в строке кода."""
+        # Находим позицию стандартного типа в строке
+        pos = line_content.find(error_type, column)
+        if pos != -1:
+            # Разбиваем строку на части: до ошибки, ошибка, после ошибки
+            before = line_content[:pos]
+            error = line_content[pos:pos+len(error_type)]
+            after = line_content[pos+len(error_type):]
+            return f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
+        else:
+            # Если не нашли точное совпадение, просто подсвечиваем символ по колонке
+            if column < len(line_content):
+                before = line_content[:column]
+                error = line_content[column]
+                after = line_content[column+1:]
+                return f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
+            else:
+                return line_content
 
     def get_fix_suggestions(self) -> Dict[str, List[Tuple[TypeViolation, str]]]:
         """Получить предложения по исправлению."""
