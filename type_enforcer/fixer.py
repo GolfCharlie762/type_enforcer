@@ -55,7 +55,9 @@ class TypeFixer:
 
             # Создаем резервную копию
             if self.enforcer.config.backup_files:
-                backup_path = path.with_suffix(f"{path.suffix}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+                backup_path = path.with_suffix(
+                    f"{path.suffix}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
                 shutil.copy2(path, backup_path)
                 print(f"📦 Создана резервная копия: {backup_path}")
 
@@ -86,8 +88,9 @@ class TypeFixer:
             print(f" Ошибка при исправлении {file_path}: {e}")
             return False
 
-    def _add_missing_imports(self, lines: List[str],
-                             fixes: List[Tuple[TypeViolation, str]]) -> List[str]:
+    def _add_missing_imports(
+        self, lines: List[str], fixes: List[Tuple[TypeViolation, str]]
+    ) -> List[str]:
         """Добавить недостающие импорты для кастомных типов."""
         # Собираем используемые кастомные типы
         used_types: Set[str] = set()
@@ -108,8 +111,10 @@ class TypeFixer:
                 # Проверяем, нет ли уже такого импорта
                 if not any(import_stmt.strip() in line for line in lines):
                     # Для многострочных импортов (как NDArrayFloat)
-                    for imp_line in import_stmt.split('\n'):
-                        if imp_line.strip() and not any(imp_line.strip() in line for line in lines):
+                    for imp_line in import_stmt.split("\n"):
+                        if imp_line.strip() and not any(
+                            imp_line.strip() in line for line in lines
+                        ):
                             new_imports.append(imp_line)
 
         # Добавляем новые импорты
@@ -124,8 +129,12 @@ class TypeFixer:
                 insert_pos = 0
                 # Пропускаем докстринги и комментарии в начале
                 for i, line in enumerate(lines):
-                    if line.strip() and not line.startswith('"""') and not line.startswith(
-                            "'''") and not line.startswith('#'):
+                    if (
+                        line.strip()
+                        and not line.startswith('"""')
+                        and not line.startswith("'''")
+                        and not line.startswith("#")
+                    ):
                         insert_pos = i
                         break
 

@@ -15,7 +15,7 @@ class ParentNodeTransformer(ast.NodeTransformer):
     def visit(self, node):
         """Посетить узел и добавить ссылку на родителя для детей."""
         for child in ast.iter_child_nodes(node):
-            setattr(child, 'parent', node)
+            setattr(child, "parent", node)
         return super().visit(node)
 
 
@@ -78,31 +78,43 @@ class TypeEnforcer:
                     self._check_name_node(node, file_path, lines, violations)
                 elif isinstance(node, ast.AnnAssign) and node.annotation:
                     # Аннотации типов
-                    self._check_annotation(node.annotation, file_path, lines, violations)
+                    self._check_annotation(
+                        node.annotation, file_path, lines, violations
+                    )
                 elif isinstance(node, ast.FunctionDef):
                     # Возвращаемые типы функций
                     if node.returns:
-                        self._check_annotation(node.returns, file_path, lines, violations)
+                        self._check_annotation(
+                            node.returns, file_path, lines, violations
+                        )
 
                     # Аргументы функций
                     for arg in node.args.args:
                         if arg.annotation:
-                            self._check_annotation(arg.annotation, file_path, lines, violations)
+                            self._check_annotation(
+                                arg.annotation, file_path, lines, violations
+                            )
 
                     # Аргументы с дефолтными значениями (kwarg, vararg и т.д.)
                     if node.args.kwarg and node.args.kwarg.annotation:
-                        self._check_annotation(node.args.kwarg.annotation, file_path, lines, violations)
+                        self._check_annotation(
+                            node.args.kwarg.annotation, file_path, lines, violations
+                        )
                     if node.args.vararg and node.args.vararg.annotation:
-                        self._check_annotation(node.args.vararg.annotation, file_path, lines, violations)
+                        self._check_annotation(
+                            node.args.vararg.annotation, file_path, lines, violations
+                        )
 
                     # Аргументы с дефолтными значениями
                     for arg in node.args.kwonlyargs:
                         if arg.annotation:
-                            self._check_annotation(arg.annotation, file_path, lines, violations)
+                            self._check_annotation(
+                                arg.annotation, file_path, lines, violations
+                            )
 
                 elif isinstance(node, ast.Assign):
                     # Проверяем аннотации типов в присваиваниях (если есть)
-                    if hasattr(node, 'type_comment') and node.type_comment:
+                    if hasattr(node, "type_comment") and node.type_comment:
                         # TODO: обработать type comments
                         pass
 
@@ -114,8 +126,13 @@ class TypeEnforcer:
         self.violations = violations
         return violations
 
-    def _check_name_node(self, node: ast.Name, file_path: Path,
-                         lines: List[str], violations: List[TypeViolation]):
+    def _check_name_node(
+        self,
+        node: ast.Name,
+        file_path: Path,
+        lines: List[str],
+        violations: List[TypeViolation],
+    ):
         """Проверить узел с именем."""
         # Проверяем, является ли имя стандартным типом, который нужно заменить
         if node.id in self.standard_to_custom:
@@ -130,27 +147,31 @@ class TypeEnforcer:
                     custom_type=self.standard_to_custom[node.id],
                     standard_type=node.id,
                     line_content=line_content,
-                    context=self._get_context(lines, node.lineno)
+                    context=self._get_context(lines, node.lineno),
                 )
 
                 # Проверяем, чтобы не добавлять дубликаты
                 if not self._violation_exists(violations, violation):
                     violations.append(violation)
 
-    def _violation_exists(self, violations: List[TypeViolation], new_violation: TypeViolation) -> bool:
+    def _violation_exists(
+        self, violations: List[TypeViolation], new_violation: TypeViolation
+    ) -> bool:
         """Проверить, существует ли такое же нарушение."""
         for v in violations:
-            if (v.file_path == new_violation.file_path and
-                    v.line == new_violation.line and
-                    v.column == new_violation.column and
-                    v.standard_type == new_violation.standard_type and
-                    v.custom_type == new_violation.custom_type):
+            if (
+                v.file_path == new_violation.file_path
+                and v.line == new_violation.line
+                and v.column == new_violation.column
+                and v.standard_type == new_violation.standard_type
+                and v.custom_type == new_violation.custom_type
+            ):
                 return True
         return False
 
     def _is_type_annotation(self, node: ast.Name) -> bool:
         """Проверить, является ли узел аннотацией типа."""
-        parent = getattr(node, 'parent', None)
+        parent = getattr(node, "parent", None)
 
         if parent is None:
             return False
@@ -174,10 +195,14 @@ class TypeEnforcer:
         if isinstance(parent, ast.Subscript):
             # Если node это slice (например, int в List[int]), то это индекс
             # Если node это value (например, List в List[int]), то это основной тип
-            if hasattr(parent, 'slice') and parent.slice == node:
+            if hasattr(parent, "slice") and parent.slice == node:
                 # Это индекс, а не основной тип
                 return False
-            elif isinstance(parent.slice, ast.Index) and hasattr(parent.slice, 'value') and parent.slice.value == node:
+            elif (
+                isinstance(parent.slice, ast.Index)
+                and hasattr(parent.slice, "value")
+                and parent.slice.value == node
+            ):
                 # Это индекс, а не основной тип
                 return False
             elif isinstance(parent.slice, ast.Tuple):
@@ -188,15 +213,18 @@ class TypeEnforcer:
 
         # 5. В индексе сложного типа: List[int] (для старых версий Python)
         if isinstance(parent, ast.Index) and parent.value == node:
-            grandparent = getattr(parent, 'parent', None)
+            grandparent = getattr(parent, "parent", None)
             if isinstance(grandparent, ast.Subscript):
                 return False  # Это индекс, а не основной тип
 
         # 6. В составе кортежа типов: Union[int, float]
         if isinstance(parent, ast.Tuple):
-            grandparent = getattr(parent, 'parent', None)
-            if isinstance(grandparent, ast.Subscript) and hasattr(grandparent, 'value'):
-                if isinstance(grandparent.value, ast.Name) and grandparent.value.id in ('Union', 'Optional'):
+            grandparent = getattr(parent, "parent", None)
+            if isinstance(grandparent, ast.Subscript) and hasattr(grandparent, "value"):
+                if isinstance(grandparent.value, ast.Name) and grandparent.value.id in (
+                    "Union",
+                    "Optional",
+                ):
                     return True  # Это кортеж типов Union/Optional
 
         # 7. В type alias: MyType = int
@@ -209,8 +237,13 @@ class TypeEnforcer:
 
         return True
 
-    def _check_annotation(self, node: ast.AST, file_path: Path,
-                          lines: List[str], violations: List[TypeViolation]):
+    def _check_annotation(
+        self,
+        node: ast.AST,
+        file_path: Path,
+        lines: List[str],
+        violations: List[TypeViolation],
+    ):
         """Проверить аннотацию типа."""
         if isinstance(node, ast.Name):
             self._check_name_node(node, file_path, lines, violations)
@@ -225,9 +258,11 @@ class TypeEnforcer:
             # Проверяем внутренний тип
             if isinstance(node.slice, ast.Name):
                 self._check_name_node(node.slice, file_path, lines, violations)
-            elif isinstance(node.slice, ast.Index) and hasattr(node.slice, 'value'):
+            elif isinstance(node.slice, ast.Index) and hasattr(node.slice, "value"):
                 if isinstance(node.slice.value, ast.Name):
-                    self._check_name_node(node.slice.value, file_path, lines, violations)
+                    self._check_name_node(
+                        node.slice.value, file_path, lines, violations
+                    )
                 elif isinstance(node.slice.value, ast.Tuple):
                     for elt in node.slice.value.elts:
                         if isinstance(elt, ast.Name):
@@ -236,26 +271,38 @@ class TypeEnforcer:
             # Для Union типов (Python 3.10+) int | float
             self._check_annotation(node.left, file_path, lines, violations)
             self._check_annotation(node.right, file_path, lines, violations)
-        elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == 'Union':
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "Union"
+        ):
             # Для Union[int, float] (старый синтаксис)
             if isinstance(node.slice, ast.Tuple):
                 for elt in node.slice.elts:
                     if isinstance(elt, ast.Name):
                         self._check_name_node(elt, file_path, lines, violations)
-        elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == 'Optional':
+        elif (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "Optional"
+        ):
             # Для Optional[int] (старый синтаксис)
             if isinstance(node.slice, ast.Name):
                 self._check_name_node(node.slice, file_path, lines, violations)
-            elif isinstance(node.slice, ast.Index) and hasattr(node.slice, 'value'):
+            elif isinstance(node.slice, ast.Index) and hasattr(node.slice, "value"):
                 if isinstance(node.slice.value, ast.Name):
-                    self._check_name_node(node.slice.value, file_path, lines, violations)
+                    self._check_name_node(
+                        node.slice.value, file_path, lines, violations
+                    )
 
     def _should_ignore(self, node: ast.Name) -> bool:
         """Проверить, нужно ли игнорировать этот узел."""
         # Этот метод больше не используется, оставляем для совместимости
         return False
 
-    def _get_context(self, lines: List[str], line_num: int, context_lines: int = 2) -> str:
+    def _get_context(
+        self, lines: List[str], line_num: int, context_lines: int = 2
+    ) -> str:
         """Получить контекст вокруг строки."""
         start = max(0, line_num - context_lines - 1)
         end = min(len(lines), line_num + context_lines)
@@ -302,13 +349,16 @@ class TypeEnforcer:
         total = len(self.violations)
 
         print(
-            f" Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n")
+            f" Найдено {total} нарушений (использование стандартных типов вместо кастомных) в {len(by_file)} файлах:\n"
+        )
 
         for file_path, violations in by_file.items():
             print(f"\n📄 {file_path}:")
             for v in violations:
                 print(f"   Строка {v.line}, колонка {v.column}")
-                print(f"     Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'")
+                print(
+                    f"     Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'"
+                )
                 print(f"     {v.line_content}")
                 if verbose:
                     print(f"\n{v.context}")
@@ -324,8 +374,7 @@ class TypeEnforcer:
 
             # Предлагаем замену стандартного типа на кастомный
             new_line = violation.line_content.replace(
-                violation.standard_type,
-                violation.custom_type
+                violation.standard_type, violation.custom_type
             )
             suggestions[violation.file_path].append((violation, new_line))
 

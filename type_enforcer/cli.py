@@ -22,74 +22,51 @@ def create_parser() -> argparse.ArgumentParser:
   type-enforcer fix ./src --dry-run
   type-enforcer fix ./src --no-backup
   type-enforcer config --init
-        """
+        """,
     )
 
-    parser.add_argument(
-        "--version",
-        action="version",
-        version="Type Enforcer 0.1.0"
-    )
+    parser.add_argument("--version", action="version", version="Type Enforcer 0.1.0")
 
     subparsers = parser.add_subparsers(dest="command", help="Команды")
 
     # Команда scan
     scan_parser = subparsers.add_parser("scan", help="Сканировать файлы")
     scan_parser.add_argument(
-        "path",
-        help="Путь к файлу или директории для сканирования"
+        "path", help="Путь к файлу или директории для сканирования"
     )
+    scan_parser.add_argument("--config", "-c", help="Путь к файлу конфигурации")
     scan_parser.add_argument(
-        "--config", "-c",
-        help="Путь к файлу конфигурации"
+        "--verbose", "-v", action="store_true", help="Подробный вывод"
     )
-    scan_parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Подробный вывод"
-    )
-    scan_parser.add_argument(
-        "--output", "-o",
-        help="Сохранить отчет в файл"
-    )
+    scan_parser.add_argument("--output", "-o", help="Сохранить отчет в файл")
 
     # Команда fix
     fix_parser = subparsers.add_parser("fix", help="Исправить найденные нарушения")
+    fix_parser.add_argument("path", help="Путь к файлу или директории для исправления")
+    fix_parser.add_argument("--config", "-c", help="Путь к файлу конфигурации")
     fix_parser.add_argument(
-        "path",
-        help="Путь к файлу или директории для исправления"
-    )
-    fix_parser.add_argument(
-        "--config", "-c",
-        help="Путь к файлу конфигурации"
-    )
-    fix_parser.add_argument(
-        "--dry-run", "-d",
+        "--dry-run",
+        "-d",
         action="store_true",
-        help="Показать что будет исправлено без фактических изменений"
+        help="Показать что будет исправлено без фактических изменений",
     )
     fix_parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Не создавать резервные копии"
+        "--no-backup", action="store_true", help="Не создавать резервные копии"
     )
     fix_parser.add_argument(
-        "--no-imports",
-        action="store_true",
-        help="Не добавлять автоматически импорты"
+        "--no-imports", action="store_true", help="Не добавлять автоматически импорты"
     )
 
     # Команда config
     config_parser = subparsers.add_parser("config", help="Управление конфигурацией")
     config_parser.add_argument(
-        "--init",
-        action="store_true",
-        help="Создать конфигурацию по умолчанию"
+        "--init", action="store_true", help="Создать конфигурацию по умолчанию"
     )
     config_parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default="type_enforcer_config.json",
-        help="Путь для сохранения конфигурации"
+        help="Путь для сохранения конфигурации",
     )
 
     return parser
@@ -177,6 +154,7 @@ def handle_config(args):
         print(f" Создан файл конфигурации: {args.output}")
         print("\nСодержимое:")
         import json
+
         print(json.dumps(config.__dict__, indent=2))
         return 0
     else:
