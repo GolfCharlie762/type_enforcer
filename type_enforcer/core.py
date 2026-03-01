@@ -343,19 +343,19 @@ class TypeEnforcer:
 
         # 4. В составе сложного типа: List[int], Union[int, float]
         if isinstance(parent, ast.Subscript):
-            # Проверяем, не является ли узел индексом
+            # Проверяем, является ли узел частью среза (внутренним типом)
             if hasattr(parent, "slice"):
+                # Если это сам срез
                 if parent.slice == node:
-                    return True  # Это элемент внутри контейнера
+                    return True
+                # Если это значение в индексе
                 if isinstance(parent.slice, ast.Index):
                     if parent.slice.value == node:
                         return True
+                # Если это элемент кортежа в срезе
                 if isinstance(parent.slice, ast.Tuple):
                     if node in parent.slice.elts:
                         return True
-            # Если это сам контейнер (List, Dict и т.д.), то не проверяем
-            if isinstance(parent.value, ast.Name) and parent.value.id in self.container_types:
-                return False
             return True
 
         # 5. В составе кортежа типов: Union[int, float]
@@ -365,6 +365,7 @@ class TypeEnforcer:
                 if isinstance(grandparent.value, ast.Name):
                     if grandparent.value.id in ("Union", "Optional"):
                         return True
+            return True
 
         # 6. В type alias: MyType = int
         if isinstance(parent, ast.Assign):
@@ -389,6 +390,7 @@ class TypeEnforcer:
             file_path: Path,
             lines: List[str],
             violations: List[TypeViolation],
+            parent_context: Optional[str] = None
     ):
         """Проверить аннотацию типа рекурсивно."""
         node_id = id(node)
@@ -400,29 +402,33 @@ class TypeEnforcer:
             self._check_name_node(node, file_path, lines, violations)
 
         elif isinstance(node, ast.Subscript):
-            # Проверяем все части subscript
-            self._check_annotation(node.value, file_path, lines, violations)
-            self._check_annotation(node.slice, file_path, lines, violations)
+            # Проверяем основной тип контейнера (List, Dict и т.д.)
+            if isinstance(node.value, ast.Name):
+                if node.value.id not in self.container_types:
+                    self._check_name_node(node.value, file_path, lines, violations)
+
+            # Проверяем срез (внутренние типы)
+            self._check_annotation(node.slice, file_path, lines, violations, "subscript_slice")
 
         elif isinstance(node, ast.Index):
             # Для старых версий Python
             if hasattr(node, "value"):
-                self._check_annotation(node.value, file_path, lines, violations)
+                self._check_annotation(node.value, file_path, lines, violations, "index")
 
         elif isinstance(node, ast.Tuple):
-            # Для кортежей типов
+            # Для кортежей типов (например, в Dict[str, float] или Union[int, float])
             for elt in node.elts:
-                self._check_annotation(elt, file_path, lines, violations)
+                self._check_annotation(elt, file_path, lines, violations, "tuple_element")
 
         elif isinstance(node, ast.List):
             # Для списков типов
             for elt in node.elts:
-                self._check_annotation(elt, file_path, lines, violations)
+                self._check_annotation(elt, file_path, lines, violations, "list_element")
 
         elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
             # Для Union типов (Python 3.10+)
-            self._check_annotation(node.left, file_path, lines, violations)
-            self._check_annotation(node.right, file_path, lines, violations)
+            self._check_annotation(node.left, file_path, lines, violations, "binop_left")
+            self._check_annotation(node.right, file_path, lines, violations, "binop_right")
 
         elif isinstance(node, ast.Attribute):
             # Для типов с точкой: np.float64
@@ -441,9 +447,12 @@ class TypeEnforcer:
 
         elif isinstance(node, ast.Call):
             # Для вызовов (например, Union[int, float])
-            if isinstance(node.func, ast.Name) and node.func.id in self.container_types:
-                for arg in node.args:
-                    self._check_annotation(arg, file_path, lines, violations)
+            if isinstance(node.func, ast.Name):
+                if node.func.id in self.container_types:
+                    for arg in node.args:
+                        self._check_annotation(arg, file_path, lines, violations, "call_arg")
+                else:
+                    self._check_name_node(node.func, file_path, lines, violations)
 
     def _get_context(
             self, lines: List[str], line_num: int, context_lines: int = 2
@@ -515,7 +524,7 @@ class TypeEnforcer:
 
                 # Подсвечиваем проблемный участок
                 highlighted_line = self._highlight_error_in_line(
-                    v.line_content, v.standard_type, v.column
+                    v.line_content, v.standard_type
                 )
                 print(f"      {highlighted_line}")
 
@@ -530,25 +539,21 @@ class TypeEnforcer:
                 if i < len(violations):
                     print()
 
-    def _highlight_error_in_line(self, line_content: str, error_type: str, column: int) -> str:
-        """Подсветить ошибочный тип в строке кода."""
-        # Находим все вхождения стандартного типа в строке
+    def _highlight_error_in_line(self, line_content: str, error_type: str) -> str:
+        """Подсветить все вхождения ошибочного типа в строке кода."""
         result = line_content
         pos = 0
-        while True:
-            pos = result.find(error_type, pos)
-            if pos == -1:
-                break
-            # Проверяем, что это целое слово
-            if (pos == 0 or not result[pos - 1].isalnum()) and \
-                    (pos + len(error_type) >= len(result) or not result[pos + len(error_type)].isalnum()):
-                before = result[:pos]
-                error = result[pos:pos + len(error_type)]
-                after = result[pos + len(error_type):]
-                result = f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
-                pos += len(error_type) + len(Fore.RED) + len(Style.RESET_ALL)
-            else:
-                pos += len(error_type)
+        # Используем регулярное выражение для поиска целых слов
+        pattern = re.compile(r'\b' + re.escape(error_type) + r'\b')
+
+        # Находим все совпадения и подсвечиваем их
+        matches = list(pattern.finditer(line_content))
+        for match in reversed(matches):  # Идём с конца, чтобы не сбивать позиции
+            start, end = match.span()
+            before = result[:start]
+            error = result[start:end]
+            after = result[end:]
+            result = f"{before}{Fore.RED}{error}{Style.RESET_ALL}{after}"
 
         return result
 
@@ -562,12 +567,17 @@ class TypeEnforcer:
 
             # Предлагаем замену стандартного типа на кастомный
             new_line = violation.line_content
-            # Заменяем только конкретное вхождение
-            pos = new_line.find(violation.standard_type, violation.column)
-            if pos != -1:
-                new_line = (new_line[:pos] +
-                            violation.custom_type +
-                            new_line[pos + len(violation.standard_type):])
+            # Заменяем только конкретное вхождение типа
+            pattern = re.compile(r'\b' + re.escape(violation.standard_type) + r'\b')
+
+            # Находим все вхождения и заменяем только то, которое соответствует позиции
+            pos = 0
+            for match in pattern.finditer(new_line):
+                if match.start() == violation.column:
+                    new_line = (new_line[:match.start()] +
+                                violation.custom_type +
+                                new_line[match.end():])
+                    break
 
             suggestions[violation.file_path].append((violation, new_line))
 
