@@ -126,11 +126,12 @@ class TypeFixer:
         # Находим существующие импорты
         import_lines = []
         for i, line in enumerate(lines):
-            if line.startswith("import ") or line.startswith("from "):
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from "):
                 import_lines.append(i)
 
         # Формируем список новых импортов
-        new_imports = []
+        new_imports: List[str] = []
         file_path = self.enforcer.violations[0].file_path if self.enforcer.violations else None
         
         for type_name in used_types:
@@ -144,14 +145,26 @@ class TypeFixer:
                 import_stmt = DEFAULT_IMPORTS.get(type_name)
             
             if import_stmt:
-                # Проверяем, нет ли уже такого импорта
-                if not any(import_stmt.strip() in line for line in lines):
-                    # Для многострочных импортов (как NDArrayFloat)
-                    for imp_line in import_stmt.split("\n"):
-                        if imp_line.strip() and not any(
-                            imp_line.strip() in line for line in lines
-                        ):
-                            new_imports.append(imp_line)
+                # Для многострочных импортов (как NDArrayFloat)
+                for imp_line in import_stmt.split("\n"):
+                    imp_stripped = imp_line.strip()
+                    if not imp_stripped:
+                        continue
+                    
+                    # Пропускаем строки, которые являются просто именами типов без "import" или "from"
+                    if not ("import" in imp_stripped or "from" in imp_stripped):
+                        continue
+                    
+                    # Проверяем, нет ли уже такого импорта (точное совпадение)
+                    already_exists = False
+                    for line in lines:
+                        line_stripped = line.strip()
+                        if line_stripped == imp_stripped:
+                            already_exists = True
+                            break
+                    
+                    if not already_exists and imp_stripped not in new_imports:
+                        new_imports.append(imp_stripped)
 
         # Добавляем новые импорты
         if new_imports:
@@ -163,16 +176,37 @@ class TypeFixer:
             else:
                 # Добавляем в начало файла (после возможных докстрингов)
                 insert_pos = 0
-                # Пропускаем докстринги и комментарии в начале
+                in_docstring = False
+                docstring_end = 0
+                
+                # Ищем конец docstring (если есть)
                 for i, line in enumerate(lines):
-                    if (
-                        line.strip()
-                        and not line.startswith('"""')
-                        and not line.startswith("'''")
-                        and not line.startswith("#")
-                    ):
-                        insert_pos = i
-                        break
+                    stripped = line.strip()
+                    
+                    # Проверяем начало/конец многострочного docstring
+                    if not in_docstring:
+                        if stripped.startswith('"""') or stripped.startswith("'''"):
+                            # Однострочный docstring
+                            if stripped.count('"""') >= 2 or stripped.count("'''") >= 2:
+                                docstring_end = i + 1
+                            else:
+                                in_docstring = True
+                    else:
+                        # Ищем конец многострочного docstring
+                        if '"""' in stripped or "'''" in stripped:
+                            in_docstring = False
+                            docstring_end = i + 1
+                
+                # Пропускаем docstring и комментарии в начале
+                for i, line in enumerate(lines):
+                    stripped = line.strip()
+                    if i >= docstring_end:
+                        if stripped and not stripped.startswith("#"):
+                            insert_pos = i
+                            break
+                        elif stripped:
+                            # Это комментарий после docstring, вставляем после него
+                            insert_pos = i + 1
 
                 for imp in reversed(new_imports):
                     lines.insert(insert_pos, imp + "\n")
