@@ -1,0 +1,28 @@
+{
+  "custom_types": {
+    "Float": "float",
+    "Int": "int",
+    "Uint": "uint",
+    "LongDouble": "float",
+    "Bool": "bool",
+    "NDArrayFloat": "NDArray",
+    "NDArrayInt": "NDArray",
+    "NDArrayUint": "NDArray",
+    "NDArrayBool": "NDArray"
+  },
+  "types_file": "src/types.py",
+  "relative_import": true,
+  "exclude_paths": [
+    ".git",
+    "__pycache__",
+    "venv",
+    "env",
+    ".env"
+  ],
+  "extensions": [
+    ".py"
+  ],
+  "auto_add_imports": true,
+  "backup_files": true,
+  "_type_to_module": {}
+}
