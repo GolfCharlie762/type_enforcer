@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Union, Optional, Tuple
+from typing import Dict, List, Union, Optional
 from dataclasses import dataclass, asdict, field
 
 # Типы по умолчанию из запроса
@@ -39,7 +39,7 @@ class Config:
     """Конфигурация для Type Enforcer."""
 
     # Типы для проверки
-    custom_types: Dict[str, str] = field(default_factory=dict)
+    custom_types: Dict[str, str] = None
 
     # Путь к файлу с кастомными типами (может быть строкой или списком путей)
     # По умолчанию используется "src/types.py"
@@ -66,11 +66,14 @@ class Config:
     _type_to_module: Dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
+        if self.custom_types is None:
+            self.custom_types = {}
+        
         # Загружаем типы из файла, если указан
         if self.types_file is not None:
             self._load_types_from_file()
         
-        if not self.exclude_paths:
+        if self.exclude_paths is None:
             self.exclude_paths = [".git", "__pycache__", "venv", "env", ".env"]
         if not self.extensions:
             self.extensions = [".py"]
@@ -218,7 +221,7 @@ class Config:
             # Используем относительный путь от рабочей директории
             try:
                 rel_to_cwd = types_file_path.relative_to(Path.cwd())
-                parts: Tuple[str, ...] = rel_to_cwd.parts
+                parts = rel_to_cwd.parts
             except ValueError:
                 # Если файл не внутри CWD, используем полный путь
                 parts = types_file_path.parts
