@@ -12,7 +12,7 @@ from colorama import Fore, Style
 # Инициализируем colorama для работы с цветами в терминале
 colorama.init(autoreset=True)
 
-from .config import Config
+from .config import Config, STANDARD_TO_CUSTOM
 
 
 class ParentNodeTransformer(ast.NodeTransformer):
@@ -55,10 +55,23 @@ class TypeEnforcer:
         self.violations: List[TypeViolation] = []
 
         # Создаем обратный словарь: стандартный тип -> кастомный тип
+        # Используем STANDARD_TO_CUSTOM из конфига или строим из custom_types
         self.standard_to_custom: Dict[str, str] = {}
-        for custom_type, standard_type in self.config.custom_types.items():
-            if standard_type not in self.standard_to_custom:
-                self.standard_to_custom[standard_type] = custom_type
+        
+        # Сначала загружаем из STANDARD_TO_CUSTOM (если есть в конфиге)
+        if hasattr(self.config, 'standard_to_custom') and self.config.standard_to_custom:
+            self.standard_to_custom = self.config.standard_to_custom.copy()
+        else:
+            # Строим из custom_types (старый формат)
+            for custom_type, standard_type in self.config.custom_types.items():
+                if standard_type and standard_type not in self.standard_to_custom:
+                    self.standard_to_custom[standard_type] = custom_type
+            
+            # Также добавляем из глобального STANDARD_TO_CUSTOM
+            for custom_type, standard_types in STANDARD_TO_CUSTOM.items():
+                for std_type in standard_types:
+                    if std_type not in self.standard_to_custom:
+                        self.standard_to_custom[std_type] = custom_type
 
         # Компилируем регулярное выражение для поиска type comments
         self.type_comment_pattern = re.compile(r'#\s*type:\s*([^#\n]+)')
@@ -67,7 +80,7 @@ class TypeEnforcer:
         self._processed_nodes: Set[int] = set()
 
         # Типы-контейнеры, которые не нужно проверять как стандартные
-        self.container_types: Set[str] = {"List", "Dict", "Set", "Tuple", "Optional", "Union", "Any"}
+        self.container_types: Set[str] = {"List", "Dict", "Set", "Tuple", "Optional", "Union", "Any", "NDArray"}
 
     def scan_file(self, file_path: Union[str, Path]) -> List[TypeViolation]:
         """Сканировать один файл на нарушения."""
@@ -86,6 +99,11 @@ class TypeEnforcer:
             tree = transformer.visit(tree)
 
             lines = content.splitlines()
+
+            # Проверяем docstring'и функций и классов на наличие типов
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    self._check_docstring_for_types(node, file_path, lines, violations)
 
             # Найти все узлы, где используются имена типов
             for node in ast.walk(tree):
@@ -117,6 +135,48 @@ class TypeEnforcer:
 
         self.violations = violations
         return violations
+
+    def _check_docstring_for_types(
+            self,
+            node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef],
+            file_path: Path,
+            lines: List[str],
+            violations: List[TypeViolation]
+    ):
+        """Проверить docstring функции/класса на наличие стандартных типов."""
+        docstring = ast.get_docstring(node)
+        if not docstring:
+            return
+
+        line_num = node.lineno
+        
+        # Ищем стандартные типы в docstring с помощью регулярных выражений
+        for std_type, custom_type in self.standard_to_custom.items():
+            # Экранируем специальные символы для regex
+            escaped_type = re.escape(std_type)
+            # Ищем целые слова (границы слов)
+            pattern = r'\b' + escaped_type + r'\b'
+            
+            for match in re.finditer(pattern, docstring):
+                # Находим строку с этим типом в docstring
+                # Вычисляем примерную позицию в файле
+                docstring_lines = docstring[:match.start()].count('\n')
+                violation_line = line_num + docstring_lines + 1
+                
+                line_content = lines[violation_line - 1] if violation_line <= len(lines) else ""
+                
+                violation = TypeViolation(
+                    file_path=str(file_path),
+                    line=violation_line,
+                    column=match.start(),
+                    custom_type=custom_type,
+                    standard_type=std_type,
+                    line_content=line_content,
+                    context=self._get_context(lines, violation_line),
+                )
+
+                if not self._violation_exists(violations, violation):
+                    violations.append(violation)
 
     def _check_function_node(
             self,
