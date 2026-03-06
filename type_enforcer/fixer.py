@@ -19,7 +19,7 @@ class TypeFixer:
 
     def fix_all(self, dry_run: bool = False) -> Dict[str, List[str]]:
         """Исправить все найденные нарушения."""
-        results = {"fixed": [], "failed": [], "skipped": []}
+        results: Dict[str, List[str]] = {"fixed": [], "failed": [], "skipped": []}
 
         # Используем уже найденные нарушения
         if not self.enforcer.violations:
@@ -59,7 +59,7 @@ class TypeFixer:
 
             # Применяем исправления (в обратном порядке, чтобы не сбивать номера строк)
             # Группируем исправления по строкам
-            fixes_by_line = {}
+            fixes_by_line: Dict[int, List[Tuple[TypeViolation, str]]] = {}
             for violation, new_line in fixes:
                 line_idx = violation.line - 1
                 if line_idx not in fixes_by_line:

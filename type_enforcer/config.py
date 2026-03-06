@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Union, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 
 # Типы по умолчанию из запроса
@@ -39,7 +39,7 @@ class Config:
     """Конфигурация для Type Enforcer."""
 
     # Типы для проверки
-    custom_types: Dict[str, str] = None
+    custom_types: Dict[str, str] = field(default_factory=dict)
 
     # Путь к файлу с кастомными типами (может быть строкой или списком путей)
     # По умолчанию используется "src/types.py"
@@ -51,10 +51,10 @@ class Config:
     relative_import: bool = True
 
     # Пути для игнорирования
-    exclude_paths: List[str] = None
+    exclude_paths: List[str] = field(default_factory=list)
 
     # Расширения файлов для проверки
-    extensions: List[str] = None
+    extensions: List[str] = field(default_factory=list)
 
     # Автоматически добавлять импорты при фиксе
     auto_add_imports: bool = True
@@ -66,16 +66,13 @@ class Config:
     _type_to_module: Dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
-        if self.custom_types is None:
-            self.custom_types = {}
-        
         # Загружаем типы из файла, если указан
         if self.types_file is not None:
             self._load_types_from_file()
         
-        if self.exclude_paths is None:
+        if not self.exclude_paths:
             self.exclude_paths = [".git", "__pycache__", "venv", "env", ".env"]
-        if self.extensions is None:
+        if not self.extensions:
             self.extensions = [".py"]
 
     def _load_types_from_file(self):
@@ -221,7 +218,7 @@ class Config:
             # Используем относительный путь от рабочей директории
             try:
                 rel_to_cwd = types_file_path.relative_to(Path.cwd())
-                parts = rel_to_cwd.parts
+                parts: Tuple[str, ...] = rel_to_cwd.parts
             except ValueError:
                 # Если файл не внутри CWD, используем полный путь
                 parts = types_file_path.parts

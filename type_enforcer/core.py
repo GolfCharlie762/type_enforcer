@@ -55,7 +55,7 @@ class TypeEnforcer:
         self.violations: List[TypeViolation] = []
 
         # Создаем обратный словарь: стандартный тип -> кастомный тип
-        self.standard_to_custom = {}
+        self.standard_to_custom: Dict[str, str] = {}
         for custom_type, standard_type in self.config.custom_types.items():
             if standard_type not in self.standard_to_custom:
                 self.standard_to_custom[standard_type] = custom_type
@@ -67,12 +67,12 @@ class TypeEnforcer:
         self._processed_nodes: Set[int] = set()
 
         # Типы-контейнеры, которые не нужно проверять как стандартные
-        self.container_types = {"List", "Dict", "Set", "Tuple", "Optional", "Union", "Any"}
+        self.container_types: Set[str] = {"List", "Dict", "Set", "Tuple", "Optional", "Union", "Any"}
 
     def scan_file(self, file_path: Union[str, Path]) -> List[TypeViolation]:
         """Сканировать один файл на нарушения."""
         file_path = Path(file_path)
-        violations = []
+        violations: List[TypeViolation] = []
         self._processed_nodes.clear()
 
         try:
@@ -350,7 +350,7 @@ class TypeEnforcer:
                     return True
                 # Если это значение в индексе
                 if isinstance(parent.slice, ast.Index):
-                    if parent.slice.value == node:
+                    if getattr(parent.slice, "value", None) == node:
                         return True
                 # Если это элемент кортежа в срезе
                 if isinstance(parent.slice, ast.Tuple):
@@ -437,7 +437,7 @@ class TypeEnforcer:
                 virtual_node = ast.Name(
                     id=node.attr,
                     lineno=node.lineno,
-                    col_offset=node.col_offset + len(node.value.id) + 1
+                    col_offset=node.col_offset + len(getattr(node.value, "id", "")) + 1
                 )
                 self._check_name_node(virtual_node, file_path, lines, violations)
 
@@ -486,7 +486,7 @@ class TypeEnforcer:
 
     def get_violations_by_file(self) -> Dict[str, List[TypeViolation]]:
         """Получить нарушения, сгруппированные по файлам."""
-        result = {}
+        result: Dict[str, List[TypeViolation]] = {}
         for violation in self.violations:
             if violation.file_path not in result:
                 result[violation.file_path] = []
@@ -559,7 +559,7 @@ class TypeEnforcer:
 
     def get_fix_suggestions(self) -> Dict[str, List[Tuple[TypeViolation, str]]]:
         """Получить предложения по исправлению."""
-        suggestions = {}
+        suggestions: Dict[str, List[Tuple[TypeViolation, str]]] = {}
 
         for violation in self.violations:
             if violation.file_path not in suggestions:
