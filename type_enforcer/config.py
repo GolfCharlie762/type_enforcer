@@ -51,10 +51,10 @@ class Config:
     relative_import: bool = True
 
     # Пути для игнорирования
-    exclude_paths: List[str] = None
+    exclude_paths: List[str] = field(default_factory=list)
 
     # Расширения файлов для проверки
-    extensions: List[str] = None
+    extensions: List[str] = field(default_factory=list)
 
     # Автоматически добавлять импорты при фиксе
     auto_add_imports: bool = True
@@ -75,7 +75,7 @@ class Config:
         
         if self.exclude_paths is None:
             self.exclude_paths = [".git", "__pycache__", "venv", "env", ".env"]
-        if self.extensions is None:
+        if not self.extensions:
             self.extensions = [".py"]
 
     def _load_types_from_file(self):

@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 import pytest
 
-from type_enforcer.core import TypeEnforcer, TypeViolation, ParentNodeTransformer
-from type_enforcer.config import Config, DEFAULT_TYPES
+from type_enforcer.core import TypeEnforcer, ParentNodeTransformer
+from type_enforcer.config import Config
 from type_enforcer.fixer import TypeFixer
 from type_enforcer.cli import main
 
