@@ -133,9 +133,19 @@ class TypeFixer:
 
         # Формируем список новых импортов
         new_imports = []
+        file_path = self.enforcer.violations[0].file_path if self.enforcer.violations else None
+        
         for type_name in used_types:
-            if type_name in DEFAULT_IMPORTS:
-                import_stmt = DEFAULT_IMPORTS[type_name]
+            # Получаем импорт из конфига (с учетом относительных путей)
+            import_stmt = None
+            if file_path and hasattr(self.enforcer.config, 'get_import_for_type'):
+                import_stmt = self.enforcer.config.get_import_for_type(type_name, file_path)
+            
+            # Если не нашли в конфиге, пробуем стандартные импорты
+            if import_stmt is None:
+                import_stmt = DEFAULT_IMPORTS.get(type_name)
+            
+            if import_stmt:
                 # Проверяем, нет ли уже такого импорта
                 if not any(import_stmt.strip() in line for line in lines):
                     # Для многострочных импортов (как NDArrayFloat)
