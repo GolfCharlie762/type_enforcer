@@ -661,7 +661,7 @@ class TestFixerBasic:
 
     def test_fix_multiple_violations_same_line(self, temp_dir):
         """Тест исправления нескольких нарушений в одной строке."""
-        code = "x: int = 42  # type: int\n"
+        code = "x, y = 42, 43  # type: int, int\n"
         file_path = temp_dir / "test.py"
         file_path.write_text(code)
 
