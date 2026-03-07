@@ -176,9 +176,17 @@ class Config:
                 
                 # Ищем словарь с типами в модуле
                 if hasattr(module, 'TYPES'):
-                    self.custom_types.update(module.TYPES)
+                    loaded_dict = module.TYPES
+                    self.custom_types.update(loaded_dict)
+                    # Заполняем _type_to_module для всех типов из словаря
+                    for type_name in loaded_dict.keys():
+                        self._type_to_module[type_name] = str(path)
                 elif hasattr(module, 'CUSTOM_TYPES'):
-                    self.custom_types.update(module.CUSTOM_TYPES)
+                    loaded_dict = module.CUSTOM_TYPES
+                    self.custom_types.update(loaded_dict)
+                    # Заполняем _type_to_module для всех типов из словаря
+                    for type_name in loaded_dict.keys():
+                        self._type_to_module[type_name] = str(path)
                 else:
                     # Если нет именованного словаря, ищем все определения типов
                     # (переменные, которые являются алиасами типов)
