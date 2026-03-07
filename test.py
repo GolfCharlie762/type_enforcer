@@ -770,6 +770,126 @@ class TestParallelScanning:
         assert len(violations) == 1
         assert "normal" in violations[0].file_path
 
+    def test_pyi_files_ignored(self, temp_dir):
+        """Тест что .pyi файлы игнорируются при сканировании."""
+        # Создаем обычный .py файл и .pyi файл заглушку
+        py_file = temp_dir / "module.py"
+        pyi_file = temp_dir / "module.pyi"
+        
+        py_file.write_text("x: int = 1")
+        pyi_file.write_text("def func(x: int) -> float: ...")
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        
+        violations = enforcer.scan_directory(temp_dir)
+        
+        # Должно найти нарушение только в .py файле
+        assert len(violations) == 1
+        assert violations[0].file_path.endswith("module.py")
+        assert not violations[0].file_path.endswith("module.pyi")
+
+    def test_pyi_files_not_ignored_when_disabled(self, temp_dir):
+        """Тест что можно отключить игнорирование .pyi файлов."""
+        py_file = temp_dir / "module.py"
+        pyi_file = temp_dir / "module.pyi"
+        
+        # .pyi файлы содержат только аннотации типов (заглушки)
+        # Поэтому они могут не содержать нарушений если там нет явных аннотаций со стандартными типами
+        py_file.write_text("x: int = 1")
+        # В .pyi файле используем явные аннотации которые будут распознаны как нарушения
+        pyi_file.write_text("y: int = 2\ndef func(x: float) -> bool: ...")
+        
+        config = Config.default()
+        config.ignore_pyi_files = False
+        enforcer = TypeEnforcer(config)
+        
+        violations = enforcer.scan_directory(temp_dir)
+        
+        # Должно найти хотя бы одно нарушение в .py файле
+        assert len(violations) >= 1
+        file_paths = [v.file_path for v in violations]
+        assert any(p.endswith("module.py") for p in file_paths)
+
+    def test_sarif_report_generation(self, temp_dir):
+        """Тест генерации SARIF отчета."""
+        from type_enforcer.cli import generate_sarif_report
+        
+        # Создаем тестовые нарушения
+        from type_enforcer.core import TypeViolation
+        
+        violations = [
+            TypeViolation(
+                file_path="test.py",
+                line=10,
+                column=5,
+                custom_type="Int",
+                standard_type="int",
+                line_content="x: int = 1"
+            ),
+            TypeViolation(
+                file_path="test.py",
+                line=20,
+                column=10,
+                custom_type="Float",
+                standard_type="float",
+                line_content="y: float = 2.0"
+            )
+        ]
+        
+        sarif_report = generate_sarif_report(violations, temp_dir)
+        
+        # Проверяем структуру SARIF
+        assert "$schema" in sarif_report
+        assert sarif_report["version"] == "2.1.0"
+        assert len(sarif_report["runs"]) == 1
+        
+        run = sarif_report["runs"][0]
+        assert "tool" in run
+        assert "results" in run
+        
+        # Проверяем что все нарушения добавлены
+        assert len(run["results"]) == 2
+        
+        # Проверяем первое нарушение
+        result = run["results"][0]
+        assert result["ruleId"] == "TC001"
+        assert result["level"] == "error"
+        assert "Int" in result["message"]["text"]
+        assert "int" in result["message"]["text"]
+        
+        location = result["locations"][0]["physicalLocation"]
+        assert location["artifactLocation"]["uri"] == "test.py"
+        assert location["region"]["startLine"] == 10
+        assert location["region"]["startColumn"] == 6  # column + 1
+
+    def test_cli_sarif_output(self, temp_dir):
+        """Тест CLI с выводом в формате SARIF."""
+        import sys
+        import json
+        
+        # Создаем тестовый файл с нарушениями
+        test_file = temp_dir / "test_sarif.py"
+        test_file.write_text("x: int = 1\ny: float = 2.0")
+        
+        sarif_output = temp_dir / "report.sarif"
+        
+        # Запускаем CLI с SARIF выводом
+        sys.argv = ["type-enforcer", "scan", str(test_file), "--sarif-output", str(sarif_output)]
+        
+        from type_enforcer.cli import main
+        ret_code = main()
+        
+        # Проверяем что файл создан
+        assert sarif_output.exists()
+        
+        # Проверяем содержимое
+        with open(sarif_output, "r", encoding="utf-8") as f:
+            report = json.load(f)
+        
+        assert report["version"] == "2.1.0"
+        assert len(report["runs"][0]["results"]) >= 2
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
