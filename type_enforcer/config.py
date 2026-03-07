@@ -6,19 +6,85 @@ from pathlib import Path
 from typing import Dict, List, Union, Optional
 from dataclasses import dataclass, asdict, field
 
-# Типы по умолчанию из запроса
-DEFAULT_TYPES = {
-    # Кастомный тип -> стандартный тип
-    "Float": "float",
-    "Int": "int",
-    "Uint": "uint",
-    "LongDouble": "float",
-    "Bool": "bool",
-    "NDArrayFloat": "NDArray",
-    "NDArrayInt": "NDArray",
-    "NDArrayUint": "NDArray",
-    "NDArrayBool": "NDArray",
+# Словарь соответствия стандартных типов кастомным (из запроса пользователя)
+STANDARD_TO_CUSTOM = {
+    # ---------- Скалярные типы ----------
+    'Float': [
+        'float',                # встроенный float (обычно 64-битный)
+        'np.float64',
+        'numpy.float64',
+        'np.float_',            # алиас numpy.float64
+        'float64',              # строковое обозначение
+        'f8',                   # строковое обозначение (dtype)
+    ],
+    'LongDouble': [
+        'np.longdouble',
+        'numpy.longdouble',
+        'longdouble',
+    ],
+    'Int': [
+        'int',                  # Python int (если в проекте договорено, что это 32 бита)
+        'np.int32',
+        'numpy.int32',
+        'int32',
+        'i4',
+    ],
+    'Uint': [
+        'np.uint32',
+        'numpy.uint32',
+        'uint32',
+        'u4',
+    ],
+    'Bool': [
+        'bool',
+        'np.bool_',
+        'numpy.bool_',
+        'bool_',
+    ],
+
+    # ---------- Непараметризованные массивы ----------
+    # Если вы планируете использовать NDArray как алиас для np.ndarray (без параметра)
+    'NDArray': [
+        'np.ndarray',
+        'numpy.ndarray',
+        'ndarray',
+    ],
+
+    # ---------- Параметризованные NDArray ----------
+    'NDArrayFloat': [
+        'NDArray[float]',
+        'NDArray[np.float64]',
+        'NDArray[numpy.float64]',
+        'NDArray[np.float_]',
+        'NDArray[float64]',
+        'NDArray[f8]',
+    ],
+    'NDArrayInt': [
+        'NDArray[np.int32]',
+        'NDArray[numpy.int32]',
+        'NDArray[int32]',
+        'NDArray[i4]',
+    ],
+    'NDArrayUint': [
+        'NDArray[np.uint32]',
+        'NDArray[numpy.uint32]',
+        'NDArray[uint32]',
+        'NDArray[u4]',
+    ],
+    'NDArrayBool': [
+        'NDArray[bool]',
+        'NDArray[np.bool_]',
+        'NDArray[numpy.bool_]',
+        'NDArray[bool_]',
+    ],
 }
+
+# Преобразуем STANDARD_TO_CUSTOM в формат custom_types (кастомный тип -> список стандартных)
+# Для обратной совместимости также создадим простой маппинг (кастомный -> первый стандартный)
+DEFAULT_TYPES = {}
+for custom_type, standard_types in STANDARD_TO_CUSTOM.items():
+    # Используем первый стандартный тип как основной для обратной совместимости
+    DEFAULT_TYPES[custom_type] = standard_types[0] if standard_types else ""
 
 # Импорты, которые нужно добавлять
 DEFAULT_IMPORTS = {
@@ -26,11 +92,12 @@ DEFAULT_IMPORTS = {
     "Int": "from numpy import int32 as Int",
     "Uint": "from numpy import uint32 as Uint",
     "LongDouble": "from numpy import longdouble as LongDouble",
-    "Bool": "bool",  # стандартный bool
+    "Bool": "from numpy import bool_ as Bool",
+    "NDArray": "from numpy.typing import NDArray",
     "NDArrayFloat": "from numpy.typing import NDArray\nfrom numpy import float64 as Float",
     "NDArrayInt": "from numpy.typing import NDArray\nfrom numpy import int32 as Int",
     "NDArrayUint": "from numpy.typing import NDArray\nfrom numpy import uint32 as Uint",
-    "NDArrayBool": "from numpy.typing import NDArray\nfrom numpy import bool_",
+    "NDArrayBool": "from numpy.typing import NDArray\nfrom numpy import bool_ as Bool",
 }
 
 
