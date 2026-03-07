@@ -457,5 +457,319 @@ class MyClass:
     assert ("bool", "Bool") in violation_types
 
 
+# ==================== ТЕСТЫ ДЛЯ НОВЫХ ФИЧ ====================
+
+class TestTypedDictProtocolLiteral:
+    """Тесты для поддержки TypedDict, Protocol, Literal."""
+    
+    def test_typeddict_recognized(self, temp_dir):
+        """Тест распознавания TypedDict."""
+        content = '''
+from typing import TypedDict
+
+class MyDict(TypedDict):
+    key: str
+    value: int
+
+def func(d: MyDict) -> MyDict:
+    return d
+'''
+        file_path = temp_dir / "typeddict_test.py"
+        file_path.write_text(content)
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        violations = enforcer.scan_file(file_path)
+        
+        # TypedDict не должен вызывать нарушений
+        typeddict_violations = [v for v in violations if "TypedDict" in v.line_content]
+        assert len(typeddict_violations) == 0
+    
+    def test_protocol_recognized(self, temp_dir):
+        """Тест распознавания Protocol."""
+        content = '''
+from typing import Protocol
+
+class Readable(Protocol):
+    def read(self) -> str:
+        ...
+
+def func(r: Readable) -> str:
+    return r.read()
+'''
+        file_path = temp_dir / "protocol_test.py"
+        file_path.write_text(content)
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        violations = enforcer.scan_file(file_path)
+        
+        # Protocol не должен вызывать нарушений
+        protocol_violations = [v for v in violations if "Protocol" in v.line_content]
+        assert len(protocol_violations) == 0
+    
+    def test_literal_recognized(self, temp_dir):
+        """Тест распознавания Literal."""
+        content = '''
+from typing import Literal
+
+def func(mode: Literal["r", "w"]) -> Literal[True, False]:
+    if mode == "r":
+        return True
+    return False
+'''
+        file_path = temp_dir / "literal_test.py"
+        file_path.write_text(content)
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        violations = enforcer.scan_file(file_path)
+        
+        # Literal не должен вызывать нарушений
+        literal_violations = [v for v in violations if "Literal" in v.line_content]
+        assert len(literal_violations) == 0
+    
+    def test_typing_special_forms_not_flagged(self, temp_dir):
+        """Тест что специальные формы typing не помечаются как нарушения."""
+        content = '''
+from typing import TypedDict, Protocol, Literal
+
+MyDict = TypedDict('MyDict', {'key': str})
+
+class MyProto(Protocol):
+    def method(self) -> int: ...
+
+Mode = Literal["a", "b", "c"]
+
+def func(d: MyDict, p: MyProto, m: Mode) -> None:
+    pass
+'''
+        file_path = temp_dir / "special_forms_test.py"
+        file_path.write_text(content)
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        violations = enforcer.scan_file(file_path)
+        
+        # Ни одна из специальных форм не должна быть нарушением
+        special_form_violations = [
+            v for v in violations 
+            if v.standard_type in ("TypedDict", "Protocol", "Literal")
+        ]
+        assert len(special_form_violations) == 0
+
+
+class TestASTCaching:
+    """Тесты для LRU-кэширования AST."""
+    
+    def test_ast_cache_stores_parsed_tree(self, temp_dir):
+        """Тест что кэш сохраняет распарсенное дерево."""
+        from type_enforcer.core import parse_file_cached, clear_ast_cache, get_cache_stats
+        
+        content = "x: int = 42"
+        file_path = temp_dir / "cache_test.py"
+        file_path.write_text(content)
+        
+        # Очищаем кэш перед тестом
+        clear_ast_cache()
+        
+        # Первый парсинг
+        tree1 = parse_file_cached(file_path, content)
+        stats = get_cache_stats()
+        assert stats["cached_files"] == 1
+        
+        # Второй парсинг того же файла - должен вернуть из кэша
+        tree2 = parse_file_cached(file_path, content)
+        
+        # Деревья должны быть одним и тем же объектом
+        assert tree1 is tree2
+    
+    def test_ast_cache_different_files(self, temp_dir):
+        """Тест что разные файлы имеют разные записи в кэше."""
+        from type_enforcer.core import parse_file_cached, clear_ast_cache, get_cache_stats
+        
+        clear_ast_cache()
+        
+        file1 = temp_dir / "file1.py"
+        file1.write_text("x: int = 42")
+        
+        file2 = temp_dir / "file2.py"
+        file2.write_text("y: float = 3.14")
+        
+        tree1 = parse_file_cached(file1, "x: int = 42")
+        tree2 = parse_file_cached(file2, "y: float = 3.14")
+        
+        stats = get_cache_stats()
+        assert stats["cached_files"] == 2
+        
+        # Деревья должны быть разными
+        assert tree1 is not tree2
+    
+    def test_ast_cache_lru_eviction(self, temp_dir):
+        """Тест LRU-вытеснения при переполнении кэша."""
+        from type_enforcer.core import parse_file_cached, clear_ast_cache, get_cache_stats
+        
+        clear_ast_cache()
+        
+        # Создаем 5 файлов с maxsize=3
+        files = []
+        for i in range(5):
+            f = temp_dir / f"file{i}.py"
+            f.write_text(f"x{i}: int = {i}")
+            files.append(f)
+        
+        # Парсим все файлы с maxsize=3
+        for f in files:
+            parse_file_cached(f, f.read_text(), maxsize=3)
+        
+        stats = get_cache_stats()
+        # В кэше должно быть не больше 3 элементов
+        assert stats["cached_files"] <= 3
+    
+    def test_clear_ast_cache(self, temp_dir):
+        """Тест очистки кэша."""
+        from type_enforcer.core import parse_file_cached, clear_ast_cache, get_cache_stats
+        
+        clear_ast_cache()
+        
+        file_path = temp_dir / "clear_test.py"
+        file_path.write_text("x: int = 42")
+        
+        parse_file_cached(file_path, "x: int = 42")
+        assert get_cache_stats()["cached_files"] == 1
+        
+        clear_ast_cache()
+        assert get_cache_stats()["cached_files"] == 0
+    
+    def test_scan_file_uses_cache(self, temp_dir):
+        """Тест что scan_file использует кэширование."""
+        from type_enforcer.core import clear_ast_cache, get_cache_stats
+        
+        clear_ast_cache()
+        
+        content = "x: int = 42"
+        file_path = temp_dir / "scan_cache_test.py"
+        file_path.write_text(content)
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        
+        # Первое сканирование
+        enforcer.scan_file(file_path, use_cache=True)
+        stats1 = get_cache_stats()
+        assert stats1["cached_files"] >= 1
+        
+        # Второе сканирование - должно использовать кэш
+        enforcer.scan_file(file_path, use_cache=True)
+        stats2 = get_cache_stats()
+        # Количество закэшированных файлов не должно измениться
+        assert stats2["cached_files"] == stats1["cached_files"]
+
+
+class TestParallelScanning:
+    """Тесты для параллельного сканирования директорий."""
+    
+    def test_parallel_scanning_finds_all_violations(self, temp_dir):
+        """Тест что параллельное сканирование находит все нарушения."""
+        # Создаем несколько файлов с нарушениями
+        for i in range(5):
+            f = temp_dir / f"parallel_file{i}.py"
+            f.write_text(f"x{i}: int = {i}\ny{i}: float = {i}.0")
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        
+        # Параллельное сканирование
+        violations_parallel = enforcer.scan_directory(temp_dir, parallel=True, max_workers=4)
+        
+        # Последовательное сканирование
+        enforcer_seq = TypeEnforcer(config)
+        violations_sequential = enforcer_seq.scan_directory(temp_dir, parallel=False)
+        
+        # Количество нарушений должно совпадать
+        assert len(violations_parallel) == len(violations_sequential)
+        
+        # Все нарушения должны быть найдены
+        assert len(violations_parallel) >= 10  # 5 файлов * 2 нарушения
+    
+    def test_parallel_vs_sequential_results(self, temp_dir):
+        """Тест идентичности результатов параллельного и последовательного сканирования."""
+        # Создаем директорию с поддиректориями
+        subdir1 = temp_dir / "subdir1"
+        subdir2 = temp_dir / "subdir2"
+        subdir1.mkdir()
+        subdir2.mkdir()
+        
+        files_content = [
+            ("file1.py", "a: int = 1"),
+            ("file2.py", "b: float = 2.0"),
+            ("subdir1/file3.py", "c: int = 3"),
+            ("subdir2/file4.py", "d: float = 4.0"),
+        ]
+        
+        for fname, content in files_content:
+            f = temp_dir / fname
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(content)
+        
+        config = Config.default()
+        
+        # Параллельное сканирование
+        enforcer_parallel = TypeEnforcer(config)
+        violations_parallel = enforcer_parallel.scan_directory(temp_dir, parallel=True, max_workers=2)
+        
+        # Последовательное сканирование
+        enforcer_sequential = TypeEnforcer(config)
+        violations_sequential = enforcer_sequential.scan_directory(temp_dir, parallel=False)
+        
+        # Сравниваем количество нарушений по файлам
+        parallel_by_file = {}
+        for v in violations_parallel:
+            if v.file_path not in parallel_by_file:
+                parallel_by_file[v.file_path] = 0
+            parallel_by_file[v.file_path] += 1
+        
+        sequential_by_file = {}
+        for v in violations_sequential:
+            if v.file_path not in sequential_by_file:
+                sequential_by_file[v.file_path] = 0
+            sequential_by_file[v.file_path] += 1
+        
+        assert parallel_by_file == sequential_by_file
+    
+    def test_single_thread_for_single_file(self, temp_dir):
+        """Тест что для одного файла используется однопоточный режим."""
+        f = temp_dir / "single.py"
+        f.write_text("x: int = 1")
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        
+        # Даже с parallel=True, для одного файла должен работать корректно
+        violations = enforcer.scan_directory(temp_dir, parallel=True, max_workers=4)
+        
+        assert len(violations) == 1
+    
+    def test_parallel_scanning_with_excluded_paths(self, temp_dir):
+        """Тест параллельного сканирования с исключенными путями."""
+        # Создаем обычную директорию и игнорируемую
+        normal_dir = temp_dir / "normal"
+        ignored_dir = temp_dir / ".git"
+        normal_dir.mkdir()
+        ignored_dir.mkdir()
+        
+        (normal_dir / "file.py").write_text("x: int = 1")
+        (ignored_dir / "file.py").write_text("y: int = 2")
+        
+        config = Config.default()
+        enforcer = TypeEnforcer(config)
+        
+        violations = enforcer.scan_directory(temp_dir, parallel=True)
+        
+        # Должно найти только в normal, но не в .git
+        assert len(violations) == 1
+        assert "normal" in violations[0].file_path
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
