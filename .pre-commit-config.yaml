@@ -1,0 +1,29 @@
+# Pre-commit конфигурация для Type Enforcer
+# Установка: pip install pre-commit && pre-commit install
+
+repos:
+  - repo: local
+    hooks:
+      - id: type-enforcer
+        name: Type Enforcer - проверка типов
+        description: Проверка использования кастомных типов данных вместо стандартных
+        entry: type-enforcer scan
+        language: python
+        types: [python]
+        pass_filenames: true
+        # Вывод в формате SARIF для интеграции с CI/CD
+        args: ["--format", "sarif", "--sarif-output", "type-enforcer-report.sarif"]
+        # Запускать только при изменении файлов
+        require_serial: false
+        # Не блокировать коммит если есть нарушения (только предупреждение)
+        # Удалите эту строку если хотите блокировать коммиты с нарушениями
+        verbose: true
+
+  # Дополнительные хуки которые могут быть полезны
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files

@@ -123,6 +123,9 @@ class Config:
     # Расширения файлов для проверки
     extensions: List[str] = field(default_factory=lambda: [".py"])
 
+    # Игнорировать файлы с расширением .pyi (файлы заглушек)
+    ignore_pyi_files: bool = True
+
     # Автоматически добавлять импорты при фиксе
     auto_add_imports: bool = True
 

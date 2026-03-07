@@ -670,6 +670,9 @@ class TypeEnforcer:
             for file in files:
                 if any(file.endswith(ext) for ext in self.config.extensions):
                     file_path = Path(root) / file
+                    # Игнорируем .pyi файлы если включена опция
+                    if self.config.ignore_pyi_files and file.endswith('.pyi'):
+                        continue
                     files_to_scan.append(file_path)
         
         if parallel and len(files_to_scan) > 1:
