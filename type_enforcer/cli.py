@@ -1,6 +1,7 @@
 """CLI интерфейс для Type Enforcer."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Optional
@@ -39,6 +40,16 @@ def create_parser() -> argparse.ArgumentParser:
         "--verbose", "-v", action="store_true", help="Подробный вывод"
     )
     scan_parser.add_argument("--output", "-o", help="Сохранить отчет в файл")
+    scan_parser.add_argument(
+        "--format",
+        choices=["text", "sarif"],
+        default="text",
+        help="Формат вывода отчета (по умолчанию: text)",
+    )
+    scan_parser.add_argument(
+        "--sarif-output",
+        help="Сохранить отчет в формате SARIF в указанный файл",
+    )
 
     # Команда fix
     fix_parser = subparsers.add_parser("fix", help="Исправить найденные нарушения")
@@ -90,6 +101,15 @@ def handle_scan(args):
     else:
         violations = enforcer.scan_directory(path)
 
+    # SARIF вывод если запрошен
+    if args.format == "sarif" or args.sarif_output:
+        output_file = args.sarif_output or args.output or "sarif-report.json"
+        sarif_content = generate_sarif_report(violations, path)
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(sarif_content, f, indent=2)
+        print(f"\n SARIF отчет сохранен в {output_file}")
+        return 1 if violations else 0
+
     enforcer.print_report(verbose=args.verbose)
 
     if args.output:
@@ -100,6 +120,84 @@ def handle_scan(args):
 
     # Возвращаем код ошибки если есть нарушения
     return 1 if violations else 0
+
+
+def generate_sarif_report(violations, scan_path: Path) -> dict:
+    """Генерировать SARIF отчет из нарушений.
+    
+    Args:
+        violations: Список нарушений
+        scan_path: Путь который сканировался
+        
+    Returns:
+        Словарь с SARIF отчетом
+    """
+    # Базовая структура SARIF
+    sarif_report = {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Type Enforcer",
+                        "version": "0.1.0",
+                        "informationUri": "https://github.com/type-enforcer/type-enforcer",
+                        "rules": [
+                            {
+                                "id": "TC001",
+                                "name": "CustomTypeUsage",
+                                "shortDescription": {
+                                    "text": "Используйте кастомный тип вместо стандартного"
+                                },
+                                "fullDescription": {
+                                    "text": "Проверка использования кастомных типов данных вместо стандартных типов Python"
+                                },
+                                "helpUri": "https://github.com/type-enforcer/type-enforcer#rules",
+                                "defaultConfiguration": {
+                                    "level": "error"
+                                }
+                            }
+                        ]
+                    }
+                },
+                "results": [],
+                "artifacts": []
+            }
+        ]
+    }
+    
+    # Добавляем результаты нарушений
+    results = []
+    for v in violations:
+        result = {
+            "ruleId": "TC001",
+            "level": "error",
+            "message": {
+                "text": f"Используйте кастомный тип '{v.custom_type}' вместо стандартного '{v.standard_type}'"
+            },
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": str(v.file_path)
+                        },
+                        "region": {
+                            "startLine": v.line,
+                            "startColumn": v.column + 1,
+                            "snippet": {
+                                "text": v.line_content
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+        results.append(result)
+    
+    sarif_report["runs"][0]["results"] = results
+    
+    return sarif_report
 
 
 def handle_fix(args):

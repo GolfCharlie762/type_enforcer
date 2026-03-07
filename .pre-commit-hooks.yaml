@@ -1,0 +1,8 @@
+- id: type-enforcer
+  name: Type Enforcer
+  description: Проверка использования кастомных типов данных
+  entry: type-enforcer scan
+  language: python
+  types: [python]
+  pass_filenames: true
+  args: ["--format", "sarif", "--sarif-output", "type-enforcer-report.sarif"]

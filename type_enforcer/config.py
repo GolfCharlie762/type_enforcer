@@ -6,19 +6,85 @@ from pathlib import Path
 from typing import Dict, List, Union, Optional
 from dataclasses import dataclass, asdict, field
 
-# Типы по умолчанию из запроса
-DEFAULT_TYPES = {
-    # Кастомный тип -> стандартный тип
-    "Float": "float",
-    "Int": "int",
-    "Uint": "uint",
-    "LongDouble": "float",
-    "Bool": "bool",
-    "NDArrayFloat": "NDArray",
-    "NDArrayInt": "NDArray",
-    "NDArrayUint": "NDArray",
-    "NDArrayBool": "NDArray",
+# Словарь соответствия стандартных типов кастомным (из запроса пользователя)
+STANDARD_TO_CUSTOM = {
+    # ---------- Скалярные типы ----------
+    'Float': [
+        'float',                # встроенный float (обычно 64-битный)
+        'np.float64',
+        'numpy.float64',
+        'np.float_',            # алиас numpy.float64
+        'float64',              # строковое обозначение
+        'f8',                   # строковое обозначение (dtype)
+    ],
+    'LongDouble': [
+        'np.longdouble',
+        'numpy.longdouble',
+        'longdouble',
+    ],
+    'Int': [
+        'int',                  # Python int (если в проекте договорено, что это 32 бита)
+        'np.int32',
+        'numpy.int32',
+        'int32',
+        'i4',
+    ],
+    'Uint': [
+        'np.uint32',
+        'numpy.uint32',
+        'uint32',
+        'u4',
+    ],
+    'Bool': [
+        'bool',
+        'np.bool_',
+        'numpy.bool_',
+        'bool_',
+    ],
+
+    # ---------- Непараметризованные массивы ----------
+    # Если вы планируете использовать NDArray как алиас для np.ndarray (без параметра)
+    'NDArray': [
+        'np.ndarray',
+        'numpy.ndarray',
+        'ndarray',
+    ],
+
+    # ---------- Параметризованные NDArray ----------
+    'NDArrayFloat': [
+        'NDArray[float]',
+        'NDArray[np.float64]',
+        'NDArray[numpy.float64]',
+        'NDArray[np.float_]',
+        'NDArray[float64]',
+        'NDArray[f8]',
+    ],
+    'NDArrayInt': [
+        'NDArray[np.int32]',
+        'NDArray[numpy.int32]',
+        'NDArray[int32]',
+        'NDArray[i4]',
+    ],
+    'NDArrayUint': [
+        'NDArray[np.uint32]',
+        'NDArray[numpy.uint32]',
+        'NDArray[uint32]',
+        'NDArray[u4]',
+    ],
+    'NDArrayBool': [
+        'NDArray[bool]',
+        'NDArray[np.bool_]',
+        'NDArray[numpy.bool_]',
+        'NDArray[bool_]',
+    ],
 }
+
+# Преобразуем STANDARD_TO_CUSTOM в формат custom_types (кастомный тип -> список стандартных)
+# Для обратной совместимости также создадим простой маппинг (кастомный -> первый стандартный)
+DEFAULT_TYPES = {}
+for custom_type, standard_types in STANDARD_TO_CUSTOM.items():
+    # Используем первый стандартный тип как основной для обратной совместимости
+    DEFAULT_TYPES[custom_type] = standard_types[0] if standard_types else ""
 
 # Импорты, которые нужно добавлять
 DEFAULT_IMPORTS = {
@@ -26,11 +92,12 @@ DEFAULT_IMPORTS = {
     "Int": "from numpy import int32 as Int",
     "Uint": "from numpy import uint32 as Uint",
     "LongDouble": "from numpy import longdouble as LongDouble",
-    "Bool": "bool",  # стандартный bool
+    "Bool": "from numpy import bool_ as Bool",
+    "NDArray": "from numpy.typing import NDArray",
     "NDArrayFloat": "from numpy.typing import NDArray\nfrom numpy import float64 as Float",
     "NDArrayInt": "from numpy.typing import NDArray\nfrom numpy import int32 as Int",
     "NDArrayUint": "from numpy.typing import NDArray\nfrom numpy import uint32 as Uint",
-    "NDArrayBool": "from numpy.typing import NDArray\nfrom numpy import bool_",
+    "NDArrayBool": "from numpy.typing import NDArray\nfrom numpy import bool_ as Bool",
 }
 
 
@@ -51,10 +118,13 @@ class Config:
     relative_import: bool = True
 
     # Пути для игнорирования
-    exclude_paths: List[str] = field(default_factory=list)
+    exclude_paths: List[str] = field(default_factory=lambda: [".git", "__pycache__", "venv", "env", ".env"])
 
     # Расширения файлов для проверки
-    extensions: List[str] = field(default_factory=list)
+    extensions: List[str] = field(default_factory=lambda: [".py"])
+
+    # Игнорировать файлы с расширением .pyi (файлы заглушек)
+    ignore_pyi_files: bool = True
 
     # Автоматически добавлять импорты при фиксе
     auto_add_imports: bool = True
@@ -69,12 +139,14 @@ class Config:
         if self.custom_types is None:
             self.custom_types = {}
         
+        # Инициализируем exclude_paths по умолчанию ДО загрузки типов
+        if self.exclude_paths is None:
+            self.exclude_paths = [".git", "__pycache__", "venv", "env", ".env"]
+        
         # Загружаем типы из файла, если указан
         if self.types_file is not None:
             self._load_types_from_file()
         
-        if self.exclude_paths is None:
-            self.exclude_paths = [".git", "__pycache__", "venv", "env", ".env"]
         if not self.extensions:
             self.extensions = [".py"]
 
@@ -107,9 +179,17 @@ class Config:
                 
                 # Ищем словарь с типами в модуле
                 if hasattr(module, 'TYPES'):
-                    self.custom_types.update(module.TYPES)
+                    loaded_dict = module.TYPES
+                    self.custom_types.update(loaded_dict)
+                    # Заполняем _type_to_module для всех типов из словаря
+                    for type_name in loaded_dict.keys():
+                        self._type_to_module[type_name] = str(path)
                 elif hasattr(module, 'CUSTOM_TYPES'):
-                    self.custom_types.update(module.CUSTOM_TYPES)
+                    loaded_dict = module.CUSTOM_TYPES
+                    self.custom_types.update(loaded_dict)
+                    # Заполняем _type_to_module для всех типов из словаря
+                    for type_name in loaded_dict.keys():
+                        self._type_to_module[type_name] = str(path)
                 else:
                     # Если нет именованного словаря, ищем все определения типов
                     # (переменные, которые являются алиасами типов)

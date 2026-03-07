@@ -1,0 +1,35 @@
+name: Type Enforcer
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  type-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -e .
+    
+    - name: Run Type Enforcer
+      run: |
+        type-enforcer scan . --format sarif --sarif-output type-enforcer-report.sarif || true
+    
+    - name: Upload SARIF report
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: type-enforcer-report.sarif
+        category: type-enforcer
