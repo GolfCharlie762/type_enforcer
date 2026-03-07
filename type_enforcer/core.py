@@ -92,7 +92,7 @@ class TypeEnforcer:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            tree = ast.parse(content)
+            tree = ast.parse(content, type_comments=True)
 
             # Добавляем ссылки на родительские узлы
             transformer = ParentNodeTransformer()
@@ -208,6 +208,10 @@ class TypeEnforcer:
             if arg.annotation:
                 self._check_annotation(arg.annotation, file_path, lines, violations)
 
+        # Проверяем type comment функции
+        if hasattr(node, "type_comment") and node.type_comment:
+            self._check_type_comment(node, file_path, lines, violations)
+
     def _check_assign_node(
             self,
             node: ast.Assign,
@@ -248,14 +252,26 @@ class TypeEnforcer:
 
         # Парсим type comment
         try:
-            # Пробуем распарсить type comment как аннотацию типа
-            parsed_type = ast.parse(type_comment, mode="eval").body
-
-            # Рекурсивно проверяем все имена в распарсенном типе
-            self._check_type_comment_node(parsed_type, file_path, line_num, lines, violations, type_comment)
+            # Пробуем распарсить как func_type для аннотаций функций: (int, float) -> bool
+            parsed_type = ast.parse(type_comment, mode="func_type")
+            
+            # Проверяем аргументы и возвращаемый тип
+            if isinstance(parsed_type, ast.FunctionType):
+                for arg in parsed_type.argtypes:
+                    self._check_type_comment_node(arg, file_path, line_num, lines, violations, type_comment)
+                self._check_type_comment_node(parsed_type.returns, file_path, line_num, lines, violations, type_comment)
+            else:
+                self._check_type_comment_node(parsed_type, file_path, line_num, lines, violations, type_comment)
         except SyntaxError:
-            # Если не удалось распарсить, ищем стандартные типы через регулярные выражения
-            self._check_type_comment_regex(type_comment, file_path, line_num, lines, violations)
+            try:
+                # Пробуем распарсить type comment как аннотацию типа
+                parsed_type = ast.parse(type_comment, mode="eval").body
+
+                # Рекурсивно проверяем все имена в распарсенном типе
+                self._check_type_comment_node(parsed_type, file_path, line_num, lines, violations, type_comment)
+            except SyntaxError:
+                # Если не удалось распарсить, ищем стандартные типы через регулярные выражения
+                self._check_type_comment_regex(type_comment, file_path, line_num, lines, violations)
 
     def _check_type_comment_node(
             self,
@@ -288,6 +304,11 @@ class TypeEnforcer:
 
                 if not self._violation_exists(violations, violation):
                     violations.append(violation)
+
+        elif isinstance(node, ast.Tuple):
+            # Для кортежей типов в type comments: (int, float) -> bool
+            for elt in node.elts:
+                self._check_type_comment_node(elt, file_path, line_num, lines, violations, original_comment)
 
         # Рекурсивно проверяем дочерние узлы
         for child in ast.iter_child_nodes(node):
@@ -442,6 +463,18 @@ class TypeEnforcer:
             if isinstance(grandparent, ast.Subscript):
                 return True
 
+        # 9. В бинарной операции | для Union типов (Python 3.10+): int | float
+        if isinstance(parent, ast.BinOp) and isinstance(parent.op, ast.BitOr):
+            return True
+
+        # 10. Внутри списка типов: Callable[[int, float], bool]
+        if isinstance(parent, ast.List):
+            grandparent = getattr(parent, "parent", None)
+            # Проверяем, что список находится внутри Tuple или Subscript
+            if isinstance(grandparent, (ast.Tuple, ast.Subscript)):
+                return True
+            return True
+
         return False
 
     def _check_annotation(
@@ -481,12 +514,12 @@ class TypeEnforcer:
                 self._check_annotation(elt, file_path, lines, violations, "tuple_element")
 
         elif isinstance(node, ast.List):
-            # Для списков типов
+            # Для списков типов (например, аргументы в Callable[[int, float], bool])
             for elt in node.elts:
                 self._check_annotation(elt, file_path, lines, violations, "list_element")
 
         elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            # Для Union типов (Python 3.10+)
+            # Для Union типов (Python 3.10+): int | float
             self._check_annotation(node.left, file_path, lines, violations, "binop_left")
             self._check_annotation(node.right, file_path, lines, violations, "binop_right")
 
