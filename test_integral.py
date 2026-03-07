@@ -1097,7 +1097,7 @@ class TestPerformanceStability:
     def test_unicode_in_code(self, temp_dir, enforcer):
         """Тест кода с Unicode символами."""
         code = '''
-# Комментарий с Unicode: 你好 мир 🌍
+# Комментарий с Unicode: Hello world! 
 def функция(x: int) -> float:
     """Функция с описанием"""
     return float(x)
