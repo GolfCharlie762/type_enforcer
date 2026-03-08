@@ -145,7 +145,10 @@ class TypeEnforcer:
         self._processed_nodes: Set[int] = set()
 
         # Типы-контейнеры, которые не нужно проверять как стандартные
-        self.container_types: Set[str] = {"List", "Dict", "Set", "Tuple", "Optional", "Union", "Any", "NDArray"}
+        self.container_types: Set[str] = {
+            "List", "Dict", "Set", "Tuple", "Optional", "Union", "Any", "NDArray",
+            "NDArrayFloat", "NDArrayInt", "NDArrayUint", "NDArrayBool"
+        }
 
     def scan_file(self, file_path: Union[str, Path], use_cache: bool = True) -> List[TypeViolation]:
         """Сканировать один файл на нарушения.
