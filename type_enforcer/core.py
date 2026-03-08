@@ -495,6 +495,9 @@ class TypeEnforcer:
         if node.id in self.typing_special_forms:
             return False
 
+        if node.id in self.standard_to_custom.values():
+            return False
+
         # Это не аннотации типа, а вызовы конструкторов/приведения типов
         if isinstance(parent, ast.Call) and parent.func == node:
             return False
