@@ -5,8 +5,8 @@
 
 from typing import List, Dict, Optional, Union, Any
 import numpy as np
-from numpy import float64 as Float
 from numpy import int32 as Int
+from numpy import float64 as Float
 from numpy import bool_ as Bool
 
 # ========== ПЕРЕМЕННЫЕ ==========
@@ -130,3 +130,9 @@ wrong_complex: Dict[str, Union[Int, List[Float]]] = {  # нарушения
     "simple": 42,
     "complex": [1.1, 1.2]
 }
+# Тест ignore-type директивы
+def test_ignore_function(
+    a: int,  #ignore-type - эта строка не должна быть исправлена
+    b: float,  #ignore-type
+) -> float:  #ignore-type
+    return float(a) * b

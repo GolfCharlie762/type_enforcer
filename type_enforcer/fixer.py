@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import List, Dict, Tuple, Set
+import re
 
 from .core import TypeEnforcer, TypeViolation
 from .config import DEFAULT_IMPORTS
@@ -55,6 +56,11 @@ class TypeFixer:
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
+            # Проверяем наличие директивы #ignore-type в начале файла
+            if self._has_ignore_directive(lines):
+                print(f"⏭️ Пропущен файл {file_path} (директива #ignore-type)")
+                return True
+
             # Применяем исправления (в обратном порядке, чтобы не сбивать номера строк)
             # Группируем исправления по строкам
             fixes_by_line: Dict[int, List[Tuple[TypeViolation, str]]] = {}
@@ -67,6 +73,10 @@ class TypeFixer:
             # Применяем исправления для каждой строки
             for line_idx, line_fixes in fixes_by_line.items():
                 original_line = lines[line_idx]
+                
+                # Проверяем наличие директивы #ignore-type в строке
+                if self._line_has_ignore_directive(original_line):
+                    continue
                 
                 # Сортируем исправления в строке по позиции в обратном порядке
                 line_fixes.sort(key=lambda x: x[0].column, reverse=True)
@@ -83,8 +93,20 @@ class TypeFixer:
                     parts_before = modified_line[:violation.column]
                     parts_after = modified_line[violation.column:]
                     
-                    # Заменяем первое вхождение старого типа в части после позиции
-                    parts_after = parts_after.replace(old_type, new_type, 1)
+                    # Для составных типов (например np.float64) нужно заменить полностью
+                    # Проверяем, является ли old_type составным (содержит точку)
+                    if '.' in old_type:
+                        # Заменяем полное вхождение составного типа
+                        parts_after = parts_after.replace(old_type, new_type, 1)
+                    else:
+                        # Для простых типов (int, float, bool) заменяем только если это не вызов функции
+                        # Ищем границу слова после типа
+                        # Создаем паттерн, который матчит слово целиком
+                        pattern = r'\b' + re.escape(old_type) + r'\b'
+                        match = re.search(pattern, parts_after)
+                        if match:
+                            # Заменяем только первое совпадение
+                            parts_after = parts_after[:match.start()] + new_type + parts_after[match.end():]
                     
                     modified_line = parts_before + parts_after
                 
@@ -114,6 +136,17 @@ class TypeFixer:
             print(f" Ошибка при исправлении {file_path}: {e}")
             return False
 
+    def _has_ignore_directive(self, lines: List[str]) -> bool:
+        """Проверить наличие директивы #ignore-type в начале файла."""
+        for i, line in enumerate(lines[:5]):  # Проверяем первые 5 строк
+            if '#ignore-type' in line or '# ignore-type' in line:
+                return True
+        return False
+    
+    def _line_has_ignore_directive(self, line: str) -> bool:
+        """Проверить наличие директивы #ignore-type в строке."""
+        return '#ignore-type' in line or '# ignore-type' in line
+
     def _add_missing_imports(
         self, lines: List[str], fixes: List[Tuple[TypeViolation, str]]
     ) -> List[str]:
@@ -123,12 +156,30 @@ class TypeFixer:
         for violation, _ in fixes:
             used_types.add(violation.custom_type)
 
-        # Находим существующие импорты
+        # Находим существующие импорты и анализируем их
         import_lines = []
+        existing_imports: Dict[str, Set[str]] = {}  # module -> set of imported names
+        
         for i, line in enumerate(lines):
             stripped = line.strip()
             if stripped.startswith("import ") or stripped.startswith("from "):
                 import_lines.append(i)
+                
+                # Парсим импорт для понимания что уже импортировано
+                if stripped.startswith("from "):
+                    # from X import A, B, C
+                    parts = stripped.split(" import ")
+                    if len(parts) == 2:
+                        module_part = parts[0].replace("from ", "").strip()
+                        imports_part = parts[1].strip()
+                        
+                        # Разбираем импортированные имена (может быть несколько через запятую)
+                        imported_names = [name.strip().split(" as ")[-1].strip() 
+                                         for name in imports_part.split(",")]
+                        
+                        if module_part not in existing_imports:
+                            existing_imports[module_part] = set()
+                        existing_imports[module_part].update(imported_names)
 
         # Формируем список новых импортов
         new_imports: List[str] = []
@@ -155,13 +206,30 @@ class TypeFixer:
                     if not ("import" in imp_stripped or "from" in imp_stripped):
                         continue
                     
-                    # Проверяем, нет ли уже такого импорта (точное совпадение)
+                    # Проверяем, нет ли уже такого импорта
+                    # Анализируем структуру импорта
                     already_exists = False
-                    for line in lines:
-                        line_stripped = line.strip()
-                        if line_stripped == imp_stripped:
-                            already_exists = True
-                            break
+                    
+                    if imp_stripped.startswith("from "):
+                        # from X import Y
+                        parts = imp_stripped.split(" import ")
+                        if len(parts) == 2:
+                            module_part = parts[0].replace("from ", "").strip()
+                            type_to_import = parts[1].strip().split(" as ")[0].strip()
+                            
+                            # Проверяем, импортирован ли уже этот тип из этого модуля
+                            if module_part in existing_imports:
+                                if type_to_import in existing_imports[module_part]:
+                                    already_exists = True
+                                    break
+                    else:
+                        # import X
+                        # Простая проверка на точное совпадение
+                        for line in lines:
+                            line_stripped = line.strip()
+                            if line_stripped == imp_stripped:
+                                already_exists = True
+                                break
                     
                     if not already_exists and imp_stripped not in new_imports:
                         new_imports.append(imp_stripped)

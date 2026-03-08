@@ -227,6 +227,10 @@ class TypeEnforcer:
 
         line_num = node.lineno
         
+        # Проверяем наличие директивы #ignore-type в docstring
+        if '#ignore-type' in docstring or '# ignore-type' in docstring:
+            return
+        
         # Ищем стандартные типы в docstring с помощью регулярных выражений
         for std_type, custom_type in self.standard_to_custom.items():
             # Экранируем специальные символы для regex
