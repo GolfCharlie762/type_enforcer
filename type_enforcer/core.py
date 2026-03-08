@@ -177,10 +177,11 @@ class TypeEnforcer:
 
             lines = content.splitlines()
 
-            # Проверяем docstring'и функций и классов на наличие типов
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    self._check_docstring_for_types(node, file_path, lines, violations)
+            # Проверяем docstring'и функций и классов на наличие типов (если включено в конфиге)
+            if self.config.check_docstrings:
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        self._check_docstring_for_types(node, file_path, lines, violations)
 
             # Найти все узлы, где используются имена типов
             for node in ast.walk(tree):
