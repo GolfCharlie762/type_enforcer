@@ -495,6 +495,10 @@ class TypeEnforcer:
         if node.id in self.typing_special_forms:
             return False
 
+        # Это не аннотации типа, а вызовы конструкторов/приведения типов
+        if isinstance(parent, ast.Call) and parent.func == node:
+            return False
+
         # 1. Аннотация переменной: var: int
         if isinstance(parent, ast.AnnAssign) and parent.annotation == node:
             return True
