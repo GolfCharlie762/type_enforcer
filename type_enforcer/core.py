@@ -140,6 +140,9 @@ class TypeEnforcer:
 
         # Компилируем регулярное выражение для поиска type comments
         self.type_comment_pattern = re.compile(r'#\s*type:\s*([^#\n]+)')
+        
+        # Регулярное выражение для поиска type: ignore
+        self.type_ignore_pattern = re.compile(r'#\s*type:\s*ignore\b')
 
         # Множество для отслеживания обработанных узлов
         self._processed_nodes: Set[int] = set()
@@ -188,8 +191,16 @@ class TypeEnforcer:
 
             # Найти все узлы, где используются имена типов
             for node in ast.walk(tree):
+                # Пропускаем корневой узел модуля (у него нет lineno)
+                if isinstance(node, ast.Module):
+                    continue
+                    
                 node_id = id(node)
                 if node_id in self._processed_nodes:
+                    continue
+
+                # Проверяем, есть ли type: ignore для этой строки
+                if hasattr(node, 'lineno') and self._has_type_ignore(lines, node.lineno):
                     continue
 
                 self._processed_nodes.add(node_id)
@@ -323,9 +334,14 @@ class TypeEnforcer:
             file_path: Path,
             lines: List[str],
             violations: List[TypeViolation],
-    ):
+    ) -> None:
         """Проверить type comment на наличие стандартных типов."""
         if not hasattr(node, "type_comment") or not node.type_comment:
+            return
+
+        # Проверяем, есть ли type: ignore для этой строки
+        line_num = getattr(node, "lineno", 0)
+        if line_num > 0 and self._has_type_ignore(lines, line_num):
             return
 
         type_comment = node.type_comment
@@ -479,6 +495,22 @@ class TypeEnforcer:
                     v.standard_type == new_violation.standard_type):
                 return True
         return False
+
+    def _has_type_ignore(self, lines: List[str], line_num: int) -> bool:
+        """Проверить, есть ли type: ignore для указанной строки.
+        
+        Args:
+            lines: Список строк файла
+            line_num: Номер строки (1-based)
+            
+        Returns:
+            True если строка содержит # type: ignore, иначе False
+        """
+        if line_num <= 0 or line_num > len(lines):
+            return False
+        
+        line_content = lines[line_num - 1]
+        return bool(self.type_ignore_pattern.search(line_content))
 
     def _is_type_annotation(self, node: ast.Name) -> bool:
         """Проверить, является ли узел аннотацией типа."""
