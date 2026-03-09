@@ -124,11 +124,11 @@ def handle_scan(args):
 
 def generate_sarif_report(violations, scan_path: Path) -> dict:
     """Генерировать SARIF отчет из нарушений.
-    
+
     Args:
         violations: Список нарушений
         scan_path: Путь который сканировался
-        
+
     Returns:
         Словарь с SARIF отчетом
     """
@@ -154,19 +154,17 @@ def generate_sarif_report(violations, scan_path: Path) -> dict:
                                     "text": "Проверка использования кастомных типов данных вместо стандартных типов Python"
                                 },
                                 "helpUri": "https://github.com/type-enforcer/type-enforcer#rules",
-                                "defaultConfiguration": {
-                                    "level": "error"
-                                }
+                                "defaultConfiguration": {"level": "error"},
                             }
-                        ]
+                        ],
                     }
                 },
                 "results": [],
-                "artifacts": []
+                "artifacts": [],
             }
-        ]
+        ],
     }
-    
+
     # Добавляем результаты нарушений
     results = []
     for v in violations:
@@ -179,24 +177,20 @@ def generate_sarif_report(violations, scan_path: Path) -> dict:
             "locations": [
                 {
                     "physicalLocation": {
-                        "artifactLocation": {
-                            "uri": str(v.file_path)
-                        },
+                        "artifactLocation": {"uri": str(v.file_path)},
                         "region": {
                             "startLine": v.line,
                             "startColumn": v.column + 1,
-                            "snippet": {
-                                "text": v.line_content
-                            }
-                        }
+                            "snippet": {"text": v.line_content},
+                        },
                     }
                 }
-            ]
+            ],
         }
         results.append(result)
-    
+
     sarif_report["runs"][0]["results"] = results
-    
+
     return sarif_report
 
 

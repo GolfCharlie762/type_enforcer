@@ -1,22 +1,22 @@
 """Расширенные тесты для Type Enforcer - максимальное покрытие всех аспектов."""
+
 import ast
 import tempfile
 import shutil
 import json
-import os
 from pathlib import Path
-from typing import List, Dict, Any
 import pytest
 
 from type_enforcer.core import TypeEnforcer, TypeViolation, ParentNodeTransformer
-from type_enforcer.config import Config, DEFAULT_TYPES, STANDARD_TO_CUSTOM, DEFAULT_IMPORTS
+from type_enforcer.config import Config, DEFAULT_TYPES, STANDARD_TO_CUSTOM
 from type_enforcer.fixer import TypeFixer
-from type_enforcer.cli import main, create_parser, load_config, handle_scan, handle_fix
+from type_enforcer.cli import create_parser, load_config
 
 
 # ============================================================================
 # ФИКСТУРЫ
 # ============================================================================
+
 
 @pytest.fixture
 def temp_dir():
@@ -41,6 +41,7 @@ def enforcer(default_config):
 # ============================================================================
 # ТЕСТЫ КОНФИГУРАЦИИ
 # ============================================================================
+
 
 class TestConfigBasic:
     """Базовые тесты конфигурации."""
@@ -67,7 +68,7 @@ class TestConfigBasic:
             exclude_paths=["custom_ignore"],
             extensions=[".py", ".pyx"],
             auto_add_imports=False,
-            backup_files=False
+            backup_files=False,
         )
         assert config.custom_types == custom_types
         assert config.types_file is None
@@ -79,11 +80,7 @@ class TestConfigBasic:
 
     def test_config_none_values_handling(self):
         """Тест обработки None значений в конфигурации."""
-        config = Config(
-            custom_types=None,
-            exclude_paths=None,
-            extensions=None
-        )
+        config = Config(custom_types=None, exclude_paths=None, extensions=None)
         # После __post_init__ должны быть установлены значения по умолчанию
         assert config.custom_types == {}
         assert config.exclude_paths is not None
@@ -94,7 +91,7 @@ class TestConfigBasic:
         config = Config(
             custom_types={"TestType": "test"},
             relative_import=False,
-            exclude_paths=["ignore1", "ignore2"]
+            exclude_paths=["ignore1", "ignore2"],
         )
 
         config_file = temp_dir / "config.json"
@@ -136,10 +133,7 @@ TYPES = {
     def test_load_types_from_json_file(self, temp_dir):
         """Тест загрузки типов из JSON файла."""
         types_file = temp_dir / "types.json"
-        types_data = {
-            "JsonInt": "int",
-            "JsonFloat": "float"
-        }
+        types_data = {"JsonInt": "int", "JsonFloat": "float"}
         types_file.write_text(json.dumps(types_data))
 
         config = Config(types_file=str(types_file))
@@ -248,6 +242,7 @@ class TestConfigImportGeneration:
 # ============================================================================
 # ТЕСТЫ CORE - ОБНАРУЖЕНИЕ НАРУШЕНИЙ
 # ============================================================================
+
 
 class TestCoreBasicViolations:
     """Базовые тесты обнаружения нарушений."""
@@ -451,6 +446,7 @@ y = {}  # type: Dict[str, float]
         assert "int" in std_types
         assert "float" in std_types
 
+
 class TestCoreEdgeCases:
     """Тесты крайних случаев."""
 
@@ -498,23 +494,25 @@ result = np.float64(3.14)
 
         # Доступ к атрибутам через точку может обрабатываться отдельно
         # Проверяем что хотя бы нет ложных срабатываний на np.int32 как вызов
-        attr_violations = [v for v in violations if "np." in v.line_content]
+        [v for v in violations if "np." in v.line_content]
         # Это зависит от реализации - может быть или не быть нарушением
 
     def test_string_literal_not_violation(self, temp_dir, enforcer):
         """Тест что строковые литералы с именами типов не считаются нарушениями."""
-        code = '''
+        code = """
 x = "int"
 y = "float is a number type"
 message = "Use int for integers"
-'''
+"""
         file_path = temp_dir / "test.py"
         file_path.write_text(code)
 
         violations = enforcer.scan_file(file_path)
 
         # Строковые литералы не должны проверяться
-        string_violations = [v for v in violations if '"' in v.line_content or "'" in v.line_content]
+        string_violations = [
+            v for v in violations if '"' in v.line_content or "'" in v.line_content
+        ]
         assert len(string_violations) == 0
 
     def test_builtin_function_call_not_violation(self, temp_dir, enforcer):
@@ -531,7 +529,11 @@ z = bool(1)
 
         # Вызовы функций преобразования могут не считаться нарушениями
         # в зависимости от контекста
-        call_violations = [v for v in violations if "= int(" in v.line_content or "= float(" in v.line_content]
+        [
+            v
+            for v in violations
+            if "= int(" in v.line_content or "= float(" in v.line_content
+        ]
         # Зависит от реализации
 
 
@@ -549,7 +551,7 @@ class TestCoreParentTracking:
         # Находим узел Name с id="int"
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and node.id == "int":
-                assert hasattr(node, 'parent')
+                assert hasattr(node, "parent")
                 assert isinstance(node.parent, ast.AnnAssign)
 
     def test_parent_in_nested_structure(self):
@@ -561,13 +563,14 @@ class TestCoreParentTracking:
         transformer.visit(tree)
 
         # Проверяем что у вложенных узлов есть родители
-        has_parent_count = sum(1 for node in ast.walk(tree) if hasattr(node, 'parent'))
+        has_parent_count = sum(1 for node in ast.walk(tree) if hasattr(node, "parent"))
         assert has_parent_count > 0
 
 
 # ============================================================================
 # ТЕСТЫ FIXER - ИСПРАВЛЕНИЕ НАРУШЕНИЙ
 # ============================================================================
+
 
 class TestFixerBasic:
     """Базовые тесты исправления."""
@@ -602,7 +605,7 @@ class TestFixerBasic:
         enforcer.scan_file(file_path)
 
         fixer = TypeFixer(enforcer)
-        results = fixer.fix_all()
+        fixer.fix_all()
 
         # Проверяем что файл исправлен
         new_content = file_path.read_text()
@@ -627,8 +630,8 @@ def func():
 
         new_content = file_path.read_text()
         # Проверяем что отступы сохранены
-        lines = new_content.split('\n')
-        assert any('    x:' in line for line in lines)
+        lines = new_content.split("\n")
+        assert any("    x:" in line for line in lines)
 
     def test_fix_dry_run(self, temp_dir):
         """Тест режима dry run."""
@@ -688,10 +691,14 @@ x: int = 42
         fixer.fix_all()
 
         new_content = file_path.read_text()
-        lines = new_content.split('\n')
+        lines = new_content.split("\n")
 
         # Находим позиции импортов
-        import_positions = [i for i, line in enumerate(lines) if line.strip().startswith(('import', 'from'))]
+        import_positions = [
+            i
+            for i, line in enumerate(lines)
+            if line.strip().startswith(("import", "from"))
+        ]
         assert len(import_positions) > 0
 
     def test_no_duplicate_imports(self, temp_dir):
@@ -713,7 +720,11 @@ x: int = 42
 
         new_content = file_path.read_text()
         # Считаем количество строк с импортом Int
-        import_lines = [line for line in new_content.split('\n') if 'import' in line and 'Int' in line]
+        import_lines = [
+            line
+            for line in new_content.split("\n")
+            if "import" in line and "Int" in line
+        ]
         # Не должно быть дубликатов
         assert len(import_lines) <= 2  # оригинальный + возможно новый
 
@@ -769,6 +780,7 @@ x: Union[int, float] = 42
 # ТЕСТЫ CLI
 # ============================================================================
 
+
 class TestCliParser:
     """Тесты парсера CLI."""
 
@@ -822,6 +834,7 @@ class TestCliLoadConfig:
 # ТЕСТЫ STANDARD_TO_CUSTOM МАППИНГА
 # ============================================================================
 
+
 class TestStandardToCustomMapping:
     """Тесты маппинга стандартных типов в кастомные."""
 
@@ -857,6 +870,7 @@ class TestStandardToCustomMapping:
 # ТЕСТЫ TYPEVIOLATION
 # ============================================================================
 
+
 class TestTypeViolation:
     """Тесты класса TypeViolation."""
 
@@ -868,7 +882,7 @@ class TestTypeViolation:
             column=5,
             custom_type="Int",
             standard_type="int",
-            line_content="x: int = 42"
+            line_content="x: int = 42",
         )
 
         str_repr = str(violation)
@@ -884,7 +898,7 @@ class TestTypeViolation:
             column=5,
             custom_type="Int",
             standard_type="int",
-            line_content="x: int = 42"
+            line_content="x: int = 42",
         )
 
         location = violation.location
@@ -896,6 +910,7 @@ class TestTypeViolation:
 # ============================================================================
 # ИНТЕГРАЦИОННЫЕ ТЕСТЫ
 # ============================================================================
+
 
 class TestIntegration:
     """Интеграционные тесты полного цикла."""
@@ -925,7 +940,7 @@ data: List[int] = [1, 2, 3]
 
         # Сканируем снова
         enforcer2 = TypeEnforcer(config)
-        new_violations = enforcer2.scan_file(file_path)
+        enforcer2.scan_file(file_path)
 
         # Нарушений должно стать меньше или не остаться вовсе
         # (зависит от того, все ли типы были исправлены)
@@ -982,6 +997,7 @@ data: List[int] = [1, 2, 3]
 # ============================================================================
 # ТЕСТЫ ПРОИЗВОДИТЕЛЬНОСТИ И СТАБИЛЬНОСТИ
 # ============================================================================
+
 
 class TestPerformanceStability:
     """Тесты производительности и стабильности."""
