@@ -4,11 +4,11 @@
 
 ## Возможности
 
-- ✅ Автоматическая проверка типов в аннотациях функций и переменных
-- ✅ Поддержка кастомных типов через внешний файл конфигурации
-- ✅ Автогенерация правильных импортов (относительных или абсолютных)
-- ✅ Гибкая настройка через JSON-конфиг
-- ✅ Интеграция в CLI
+-  Автоматическая проверка типов в аннотациях функций и переменных
+-  Поддержка кастомных типов через внешний файл конфигурации
+-  Автогенерация правильных импортов (относительных или абсолютных)
+-  Гибкая настройка через JSON-конфиг
+-  Интеграция в CLI
 
 ---
 
@@ -78,13 +78,13 @@ NDArrayBool = NDArray[np.bool_]
 Запустите проверку типов в вашем проекте:
 
 ```bash
-type-enforcer check src/
+type-enforcer scan src/
 ```
 
 Или проверьте конкретный файл:
 
 ```bash
-type-enforcer check src/main.py
+type-enforcer scan src/main.py
 ```
 
 Если в коде используется тип `NDArrayFloat`, но забыт импорт, инструмент автоматически предложит или добавит правильный импорт в зависимости от настроек.
@@ -155,13 +155,13 @@ type-enforcer check src/main.py
 type-enforcer config --init
 ```
 
-### `check <path>`
+### `scan <path>`
 
 Проверяет указанные файлы или директории на соответствие типам.
 
 ```bash
-type-enforcer check src/
-type-enforcer check src/main.py src/utils.py
+type-enforcer scan src/
+type-enforcer scan src/main.py src/utils.py
 ```
 
 Опции:
@@ -172,7 +172,7 @@ type-enforcer check src/main.py src/utils.py
 Пример:
 
 ```bash
-type-enforcer check src/ --fix --verbose
+type-enforcer scan src/ --fix --verbose
 ```
 
 ### `types --list`
